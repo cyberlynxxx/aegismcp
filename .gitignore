@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.egg-info/
+*.pyc
+report.sarif
+*.sarif
+*.lock.json
+dist/
+build/
+test.lock.json
+aegismcp.lock.json

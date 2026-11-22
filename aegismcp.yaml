@@ -1,0 +1,60 @@
+# AegisMCP Configuration File
+# Place this in your project root or any parent directory
+
+# Rule configurations: enable/disable or override severity
+rules:
+  AMCP001:  # Direct Shell Execution
+    enabled: true
+    severity: CRITICAL
+  AMCP002:  # Unpinned npx Package
+    enabled: true
+    severity: MEDIUM
+  AMCP003:  # Sensitive Paths
+    enabled: true
+    severity: HIGH
+  AMCP004:  # Hardcoded Secrets
+    enabled: true
+    severity: CRITICAL
+  AMCP005:  # Tool Poisoning
+    enabled: true
+    severity: CRITICAL
+  AMCP006:  # Long Descriptions
+    enabled: true
+    severity: MEDIUM
+  AMCP007:  # Invisible Unicode
+    enabled: true
+    severity: CRITICAL
+  AMCP008:  # High Entropy Secrets
+    enabled: true
+    severity: HIGH
+
+# Custom regex rules
+custom_rules:
+  - id: "CUSTOM001"
+    title: "Internal Domain Exposure"
+    pattern: "internal\\.company\\.com"
+    severity: "HIGH"
+    target: "servers.env"
+    message: "Server '{server}' env var '{key}' references internal domain"
+    remediation: "Avoid referencing internal domains in MCP config; use environment variables."
+
+  - id: "CUSTOM002"
+    title: "Debug Mode Enabled"
+    pattern: "(?i)debug\\s*[:=]\\s*true"
+    severity: "MEDIUM"
+    target: "servers.env"
+    message: "Debug mode enabled in server '{server}'"
+    remediation: "Disable debug mode in production MCP servers."
+
+# Paths to ignore during scanning
+ignore_paths:
+  - "node_modules/**"
+  - ".git/**"
+  - "__pycache__/**"
+  - "*.lock.json"
+
+# Default fail-on threshold for CI/CD
+fail_on: "HIGH"
+
+# Auto-discover platform MCP configs (Claude Desktop, Cursor, Windsurf, VS Code)
+auto_discover: true
