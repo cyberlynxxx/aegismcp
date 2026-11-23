@@ -173,62 +173,86 @@ class PythonASTVisitor(ast.NodeVisitor):
     # === Path Traversal (AMCP104) ===
     def _check_path_traversal(self, node: ast.Call) -> None:
         """Detect path traversal vulnerabilities."""
-        dangerous_funcs = {
-            "open": ("builtins",),
-            "read": ("pathlib", "Path"),
-            "write_text": ("pathlib", "Path"),
-            "write_bytes": ("pathlib", "Path"),
-            "unlink": ("pathlib", "Path"),
-            "rmdir": ("pathlib", "Path"),
-            "mkdir": ("pathlib", "Path"),
-            "remove": ("os",),
-            "unlink": ("os",),
-            "rmdir": ("os",),
-            "mkdir": ("os",),
+        # Functions that accept paths - only flag if path is clearly user-controlled/dynamic
+        path_funcs = {
+            "open", "read", "write_text", "write_bytes", "unlink", "rmdir", "mkdir",
+            "remove", "rename", "replace", "symlink", "readlink", "lstat", "stat",
+            "chmod", "chown", "access", "exists", "is_file", "is_dir"
         }
 
-        func = node.func
-        if isinstance(func, ast.Name):
-            if func.id in dangerous_funcs:
-                # Check first argument for path traversal patterns
-                if node.args:
-                    if self._has_path_traversal(node.args[0]):
-                        self._add_finding(
-                            "AMCP104", "HIGH",
-                            "Potential Path Traversal",
-                            f"File operation with user-controlled path: {func.id}()",
-                            node,
-                            "Validate/resolve paths, use Path.resolve(), restrict to allowed directories"
-                        )
-        elif isinstance(func, ast.Attribute):
-            if func.attr in dangerous_funcs:
-                if node.args and self._has_path_traversal(node.args[0]):
-                    self._add_finding(
-                        "AMCP104", "HIGH",
-                        "Potential Path Traversal",
-                        f"File operation with user-controlled path: {func.attr}()",
-                        node,
-                        "Validate/resolve paths, use Path.resolve(), restrict to allowed directories"
-                    )
+        func_name = None
+        if isinstance(node.func, ast.Name):
+            func_name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            func_name = node.func.attr
 
-    def _has_path_traversal(self, node: ast.AST) -> bool:
-        """Heuristic: does this path expression contain user input?"""
-        # If it's a variable, function call, or formatted string - potentially unsafe
-        return not self._is_safe_path(node)
+        if func_name not in path_funcs:
+            return
 
-    def _is_safe_path(self, node: ast.AST) -> bool:
-        """Check if path is a safe literal."""
+        # Check if there's a path argument
+        path_arg = None
+        if node.args:
+            path_arg = node.args[0]
+        else:
+            for kw in node.keywords:
+                if kw.arg in ("path", "file", "filename", "name"):
+                    path_arg = kw.value
+                    break
+
+        if path_arg and self._is_user_controlled_path(path_arg):
+            self._add_finding(
+                "AMCP104", "HIGH",
+                "Potential Path Traversal",
+                f"File operation with user-controlled path: {func_name}()",
+                node,
+                "Validate/resolve paths with Path.resolve(), restrict to allowed directories, avoid user input in paths"
+            )
+
+    def _is_user_controlled_path(self, node: ast.AST) -> bool:
+        """
+        Heuristic: does this path expression contain user-controlled/dynamic input?
+        Returns True if the path is likely from user input (function param, f-string,
+        concat, variable, function call), False if it's a safe literal or known-safe pattern.
+        """
+        # Safe: string literal without traversal sequences
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            return ".." not in node.value and not node.value.startswith("/")
+            val = node.value
+            # Known-safe patterns: temp paths, relative paths without ..
+            if ".." in val or val.startswith("/"):
+                # Absolute paths or explicit traversal - suspicious
+                # But allow known temp fixtures
+                if "tmp" in val.lower() or "temp" in val.lower():
+                    return False
+                return True
+            return False
+
+        # Safe: Path(...).resolve() or Path.cwd() / "literal"
+        if isinstance(node, ast.Call):
+            # Path.resolve() calls
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "resolve":
+                return False
+            # Path() constructor with safe args
+            if isinstance(node.func, ast.Name) and node.func.id == "Path":
+                return all(not self._is_user_controlled_path(arg) for arg in node.args)
+            # pathlib.Path operations
+            if isinstance(node.func, ast.Attribute):
+                if node.func.attr in ("joinpath", "__truediv__"):
+                    return any(self._is_user_controlled_path(arg) for arg in node.args)
+            return True  # Other function calls are dynamic
+
+        # Unsafe: f-strings, string concatenation, variables
         if isinstance(node, ast.JoinedStr):  # f-string
-            return False  # Dynamic
+            return True
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):  # string concat
-            return False
-        if isinstance(node, ast.Call):  # function call
-            return False
+            return True
         if isinstance(node, ast.Name):  # variable
-            return False
-        return True
+            return True
+        if isinstance(node, ast.Subscript):  # indexing like args[0]
+            return True
+        if isinstance(node, ast.Attribute):  # attribute access like obj.path
+            return True
+
+        return False
 
     # === Insecure Deserialization (AMCP105) ===
     def _check_insecure_deserialization(self, node: ast.Call) -> None:
@@ -281,7 +305,24 @@ def scan_python_file(file_path: Path) -> list[ASTFinding]:
     return visitor.findings
 
 
-def scan_python_directory(root: Path) -> list[ASTFinding]:
+def _is_test_file(file_path: Path) -> bool:
+    """Check if a file is a test file based on naming conventions."""
+    name = file_path.name
+    # Check for test_*.py or *_test.py patterns
+    if name.startswith("test_") and name.endswith(".py"):
+        return True
+    if name.endswith("_test.py"):
+        return True
+    return False
+
+
+def _is_in_test_dir(file_path: Path) -> bool:
+    """Check if a file is in a test directory."""
+    test_dirs = {"tests", "test", "testing", "__tests__", "__test__"}
+    return any(part in test_dirs for part in file_path.parts)
+
+
+def scan_python_directory(root: Path, include_tests: bool = False) -> list[ASTFinding]:
     """Recursively scan all Python files in a directory."""
     findings = []
     ignore_dirs = {".git", "__pycache__", ".venv", "venv", "env", "dist", "build", ".pytest_cache", ".mypy_cache", "node_modules"}
@@ -289,6 +330,10 @@ def scan_python_directory(root: Path) -> list[ASTFinding]:
     for py_file in root.rglob("*.py"):
         if any(part in ignore_dirs for part in py_file.parts):
             continue
+        # Skip test files/directories unless explicitly included
+        if not include_tests:
+            if _is_test_file(py_file) or _is_in_test_dir(py_file):
+                continue
         findings.extend(scan_python_file(py_file))
 
     return findings

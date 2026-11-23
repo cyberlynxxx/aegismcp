@@ -78,7 +78,7 @@ def _check_custom_rule(data: dict[str, Any], location: str, custom_rule: dict[st
     title = custom_rule.get("title", "Custom Rule Match")
     message_template = custom_rule.get("message", "Custom rule matched")
     remediation = custom_rule.get("remediation", "Review the matched content.")
-    target = custom_rule.get("target", "tools.description")  # tools.description, servers.env, etc.
+    target = custom_rule.get("target", "tools.description")  # tools.description, servers.env, servers.command, etc.
 
     try:
         pattern = re.compile(pattern_str)
@@ -124,6 +124,22 @@ def _check_custom_rule(data: dict[str, Any], location: str, custom_rule: dict[st
                             location=f"{location}:mcpServers.{name}.env.{k}",
                             remediation=remediation,
                         ))
+    elif target == "servers.command":
+        servers = data.get("mcpServers", {}) or data.get("servers", {})
+        if isinstance(servers, dict):
+            for name, cfg in servers.items():
+                if not isinstance(cfg, dict):
+                    continue
+                command = cfg.get("command", "")
+                if isinstance(command, str) and pattern.search(command):
+                    findings.append(Finding(
+                        rule_id=rule_id,
+                        severity=severity,
+                        title=title,
+                        message=message_template.format(server=name, match=pattern_str),
+                        location=f"{location}:mcpServers.{name}.command",
+                        remediation=remediation,
+                    ))
 
     return findings
 

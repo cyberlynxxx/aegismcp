@@ -16,7 +16,7 @@ from .rules_core import Finding
 from .rules.registry import registry, Rule
 from .sarif import export_sarif
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 __all__ = [
     "main",
     "Config",

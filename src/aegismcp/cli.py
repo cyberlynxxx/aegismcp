@@ -61,6 +61,26 @@ def print_ast_findings(findings: list[ASTFinding], show_color: bool = True) -> N
         print(f"  Fix:      {finding.remediation}\n")
 
 
+def _print_summary(findings: list, file_count: int = 1) -> None:
+    """Print a summary line with finding counts by severity."""
+    if not findings:
+        print("[OK] No security issues found.")
+        return
+
+    counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    for f in findings:
+        sev = getattr(f, "severity", "MEDIUM")
+        if sev in counts:
+            counts[sev] += 1
+
+    parts = []
+    for sev in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+        if counts[sev]:
+            parts.append(f"{counts[sev]} {sev}")
+    detail = ", ".join(parts) if parts else "0 findings"
+    print(f"Summary: {len(findings)} findings ({detail}) in {file_count} file(s)")
+
+
 def cmd_scan(args: argparse.Namespace) -> int:
     """Handle the scan command."""
     config = Config.load(Path(args.config) if args.config else None)
@@ -71,10 +91,13 @@ def cmd_scan(args: argparse.Namespace) -> int:
     if args.no_auto_discover:
         config.auto_discover = False
 
-    target = Path(args.target)
     all_findings = []
+    files_scanned = 0
 
-    if args.auto:
+    # Determine if we should auto-discover
+    should_auto = args.auto or (not args.target and config.auto_discover)
+
+    if should_auto:
         # Auto-discover MCP config files
         files = discover_mcp_files(auto_discover=config.auto_discover)
         if not files:
@@ -89,15 +112,30 @@ def cmd_scan(args: argparse.Namespace) -> int:
             if config.should_ignore(f):
                 continue
             all_findings.extend(scan_file(f, config))
+            files_scanned += 1
     else:
+        # Require target if not auto-discovering
+        if not args.target:
+            print("Error: target path required (or use --auto / set auto_discover: true in config)")
+            return 2
+        target = Path(args.target)
         # Original behavior: scan file or directory
         if target.is_file():
             all_findings.extend(scan_file(target, config))
+            files_scanned = 1
         else:
-            all_findings.extend(scan_directory(target, config))
+            # For directory, count files scanned
+            from .discovery import iter_json_files, _looks_like_mcp_config
+            for json_file in iter_json_files(target):
+                if config.should_ignore(json_file):
+                    continue
+                if _looks_like_mcp_config(json_file):
+                    all_findings.extend(scan_file(json_file, config))
+                    files_scanned += 1
+
+    _print_summary(all_findings, files_scanned)
 
     if not all_findings:
-        print("[OK] No security issues detected.")
         return 0
 
     print_findings(all_findings, show_color=not args.no_color)
@@ -174,11 +212,24 @@ def cmd_ast_scan(args: argparse.Namespace) -> int:
 
     if target.is_file():
         findings = scan_python_file(target)
+        file_count = 1
     else:
-        findings = scan_python_directory(target)
+        findings = scan_python_directory(target, include_tests=args.include_tests)
+        # Count Python files scanned
+        from .ast_scanner import _is_test_file, _is_in_test_dir
+        ignore_dirs = {".git", "__pycache__", ".venv", "venv", "env", "dist", "build", ".pytest_cache", ".mypy_cache", "node_modules"}
+        file_count = 0
+        for py_file in target.rglob("*.py"):
+            if any(part in ignore_dirs for part in py_file.parts):
+                continue
+            if not args.include_tests:
+                if _is_test_file(py_file) or _is_in_test_dir(py_file):
+                    continue
+            file_count += 1
+
+    _print_summary(findings, file_count)
 
     if not findings:
-        print("[OK] No security issues detected in Python source.")
         return 0
 
     print_ast_findings(findings, show_color=not args.no_color)
@@ -219,7 +270,7 @@ def main() -> None:
 
     # --- scan command ---
     scan_parser = subparsers.add_parser("scan", help="Scan MCP config file(s) or directory")
-    scan_parser.add_argument("target", type=str, help="Path to MCP config file or folder")
+    scan_parser.add_argument("target", nargs="?", type=str, default=None, help="Path to MCP config file or folder (optional if --auto or auto_discover in config)")
     scan_parser.add_argument("--auto", action="store_true", help="Auto-discover MCP configs (Claude Desktop, Cursor, Windsurf, VS Code)")
     scan_parser.add_argument("--sarif", type=str, help="Export report to SARIF file")
     scan_parser.add_argument("--fail-on", choices=["LOW", "MEDIUM", "HIGH", "CRITICAL"], help="Exit with error if findings at or above this severity")
@@ -240,6 +291,7 @@ def main() -> None:
     ast_parser.add_argument("target", type=str, help="Path to Python file or directory")
     ast_parser.add_argument("--sarif", type=str, help="Export report to SARIF file")
     ast_parser.add_argument("--fail-on", choices=["LOW", "MEDIUM", "HIGH", "CRITICAL"], default="HIGH", help="Exit with error if findings at or above this severity")
+    ast_parser.add_argument("--include-tests", action="store_true", help="Include test files/directories (tests/, test_*.py, *_test.py)")
 
     args = parser.parse_args()
 

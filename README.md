@@ -2,7 +2,13 @@
 
 A lightweight, open-source Python security scanner and CI/CD linter for **Model Context Protocol (MCP)** configurations and AI agent tool definitions.
 
-> **Version 2.0.0** — Phase 1: Auto-discovery, policy config, rug-pull protection, AST scanning, SARIF export.
+> **Version 2.0.1** — Phase 1: Auto-discovery, policy config, rug-pull protection, AST scanning, SARIF export. Fixes: scan --auto, AST false positives, tests, CI.
+
+---
+
+## Demo
+
+<!-- TODO: Add terminal screenshot or GIF here showing `aegismcp scan --auto` output -->
 
 ---
 
@@ -25,7 +31,7 @@ A lightweight, open-source Python security scanner and CI/CD linter for **Model 
 
 | Rule ID | Severity | Description |
 | :--- | :--- | :--- |
-| `AMCP101` | CRITICAL | Command injection (`subprocess`, `os.system`, `eval`, `exec`) |
+| `AMCP101` | HIGH / CRITICAL | Command injection (`subprocess`, `os.system`, `os.popen`) |
 | `AMCP102` | CRITICAL | Dynamic code execution (`eval`, `exec`) |
 | `AMCP103` | HIGH | SSRF — dynamic URLs in HTTP calls (`requests`, `httpx`, etc.) |
 | `AMCP104` | HIGH | Path traversal — user-controlled file paths |
@@ -77,7 +83,7 @@ auto_discover: true
 ```
 
 ```bash
-aegismcp scan samples/vulnerable_mcp.json --config aegismcp.yaml
+aegismcp scan --config aegismcp.yaml samples/vulnerable_mcp.json
 ```
 
 ### 🔒 Rug-Pull Protection (`lock` / `verify`)
@@ -95,7 +101,11 @@ aegismcp verify samples/vulnerable_mcp.json -l aegismcp.lock.json
 Static analysis of Python MCP server source code for runtime vulnerabilities:
 
 ```bash
+# Excludes test files by default (tests/, test_*.py, *_test.py)
 aegismcp ast-scan path/to/server.py --sarif ast-report.sarif --fail-on HIGH
+
+# Include test files explicitly
+aegismcp ast-scan path/to/server.py --include-tests --fail-on HIGH
 ```
 
 ### 📦 SARIF Export & CI/CD
@@ -119,9 +129,16 @@ All CLI output uses `[OK]`/`[FAIL]` markers (no Unicode symbols), colored output
 ## Installation
 
 ```bash
-pip install aegismcp
-# or from source
+# From GitHub
+pip install git+https://github.com/cyberlynxxx/aegismcp.git
+
+# From source (editable)
+git clone https://github.com/cyberlynxxx/aegismcp
+cd aegismcp
 pip install -e .
+
+# With dev dependencies (for testing)
+pip install -e ".[dev]"
 ```
 
 ---
@@ -146,7 +163,7 @@ aegismcp scan [TARGET] [--auto] [--sarif FILE] [--fail-on LEVEL] [--no-auto-disc
 
 | Option | Description |
 | :--- | :--- |
-| `TARGET` | Path to MCP config file or directory |
+| `TARGET` | Path to MCP config file or directory (optional if `--auto` or `auto_discover: true` in config) |
 | `--auto` | Auto-discover platform MCP configs |
 | `--sarif FILE` | Export SARIF report |
 | `--fail-on LEVEL` | Exit with error if findings ≥ LEVEL (LOW/MEDIUM/HIGH/CRITICAL) |
@@ -174,7 +191,7 @@ aegismcp verify <CONFIG_FILE> [-l LOCKFILE]
 
 ### `ast-scan`
 ```bash
-aegismcp ast-scan <TARGET> [--sarif FILE] [--fail-on LEVEL]
+aegismcp ast-scan <TARGET> [--sarif FILE] [--fail-on LEVEL] [--include-tests]
 ```
 
 | Option | Description |
@@ -182,6 +199,7 @@ aegismcp ast-scan <TARGET> [--sarif FILE] [--fail-on LEVEL]
 | `TARGET` | Path to Python file or directory |
 | `--sarif FILE` | Export SARIF report |
 | `--fail-on LEVEL` | Exit with error if findings ≥ LEVEL (default: HIGH) |
+| `--include-tests` | Include test files/directories (`tests/`, `test_*.py`, `*_test.py`) |
 
 ---
 
@@ -197,6 +215,8 @@ aegismcp ast-scan <TARGET> [--sarif FILE] [--fail-on LEVEL]
   File:     server.py:33:15
   Detail:   HTTP request with dynamic URL detected (requests.get)
   Fix:      Validate URLs against allowlist, block private/internal IPs
+
+Summary: 9 findings (6 CRITICAL, 2 HIGH, 1 MEDIUM) in 1 file(s)
 ```
 
 ---
@@ -205,25 +225,33 @@ aegismcp ast-scan <TARGET> [--sarif FILE] [--fail-on LEVEL]
 
 ```
 aegismcp/
-├── aegismcp.yaml           # Example policy config
+├── LICENSE                    # MIT License
+├── aegismcp.yaml              # Example policy config
 ├── samples/
-│   ├── vulnerable_mcp.json # Test config with all rule triggers
-│   └── test_server.py      # Test Python server with AST vulnerabilities
+│   ├── vulnerable_mcp.json    # Test config with all rule triggers
+│   └── test_server.py         # Test Python server with AST vulnerabilities
+├── tests/                     # Pytest test suite
+│   ├── conftest.py
+│   ├── test_scan.py
+│   ├── test_lock_verify.py
+│   └── test_ast_scanner.py
+├── .github/workflows/
+│   └── ci.yml                 # GitHub Actions CI (Linux + Windows, Python 3.10/3.12)
 ├── src/aegismcp/
-│   ├── __main__.py         # CLI entry point
-│   ├── cli.py              # Command implementations
-│   ├── config.py           # aegismcp.yaml loader
-│   ├── discovery.py        # Cross-platform auto-discovery
-│   ├── lockfile.py         # SHA-256 lockfile (rug-pull protection)
-│   ├── ast_scanner.py      # AST visitor for Python vulnerabilities
-│   ├── scanner.py          # Main scanner engine
-│   ├── sarif.py            # SARIF 2.1.0 exporter
-│   ├── rules_core.py       # Finding dataclass
+│   ├── __main__.py            # CLI entry point
+│   ├── cli.py                 # Command implementations
+│   ├── config.py              # aegismcp.yaml loader
+│   ├── discovery.py           # Cross-platform auto-discovery
+│   ├── lockfile.py            # SHA-256 lockfile (rug-pull protection)
+│   ├── ast_scanner.py         # AST visitor for Python vulnerabilities
+│   ├── scanner.py             # Main scanner engine
+│   ├── sarif.py               # SARIF 2.1.0 exporter
+│   ├── rules_core.py          # Finding dataclass
 │   └── rules/
-│       ├── __init__.py     # Auto-registers built-in rules
-│       ├── registry.py     # RuleRegistry class
+│       ├── __init__.py        # Auto-registers built-in rules
+│       ├── registry.py        # RuleRegistry class
 │       └── builtins/
-│           └── __init__.py # AMCP001-AMCP008 implementations
+│           └── __init__.py    # AMCP001-AMCP008 implementations
 ```
 
 ---

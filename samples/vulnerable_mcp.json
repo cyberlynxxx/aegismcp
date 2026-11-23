@@ -22,6 +22,10 @@
     {
       "name": "translate_text",
       "description": "Translates text safely.\u200b\u200b\u200b"
+    },
+    {
+      "name": "long_description_tool",
+      "description": "This is an extremely long tool description that exceeds the threshold for suspicious length. It contains many words that are deliberately placed here to trigger the AMCP006 rule which detects abnormally long tool descriptions that could be used to hide malicious payloads or instructions. The description continues with more filler text to ensure it crosses the character limit that the security scanner uses to identify potentially poisoned tool definitions. This is a common technique in prompt injection attacks where attackers hide malicious instructions in very long descriptions that users might not fully read but the LLM will process. Additional filler text to push this over the 1000 character threshold: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. More text to ensure we exceed 1000 characters easily for testing purposes."
     }
   ]
 }
