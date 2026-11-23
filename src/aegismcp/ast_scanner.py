@@ -20,6 +20,11 @@ class ASTFinding:
     column: int
     remediation: str
 
+    @property
+    def location(self) -> str:
+        """Format location for reporting."""
+        return f"{self.file_path}:{self.line}:{self.column}"
+
 
 class PythonASTVisitor(ast.NodeVisitor):
     """AST visitor that detects security issues in Python MCP servers."""

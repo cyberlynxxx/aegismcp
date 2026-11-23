@@ -1,10 +1,10 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./assets/banner-dark.svg">
-  <img alt="AegisMCP - Security Scanner for MCP and AI Agents" src="./assets/banner-light.svg" width="520">
+  <img alt="AegisMCP - Active MCP Security Engine & Runtime Firewall" src="./assets/banner-light.svg" width="520">
 </picture>
 
 <p align="center">
-  <strong>A lightweight, open-source Python security scanner and CI/CD linter for <strong>Model Context Protocol (MCP)</strong> configurations and AI agent tool definitions.</strong>
+  <strong>An Active MCP Security Engine & Runtime Firewall — live introspection, runtime proxy, cross-server rules, executive reporting.</strong>
 </p>
 
 <p align="center">
@@ -23,9 +23,11 @@
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> · 
-  <a href="#quick-start">Quick Start</a> · 
-  <a href="#-python-ast-scanning-ast-scan">AST Scan</a> · 
+  <a href="#features">Features</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#-live-introspection-inspect">Live Inspect</a> ·
+  <a href="#-runtime-proxy-firewall-proxy">Runtime Proxy</a> ·
+  <a href="#-html-reports">HTML Reports</a> ·
   <a href="https://github.com/cyberlynxxx/aegismcp/releases">Releases</a>
 </p>
 
@@ -56,64 +58,95 @@
 | `AMCP104` | HIGH | Path traversal — user-controlled file paths |
 | `AMCP105` | CRITICAL | Insecure deserialization (`pickle.loads`, `yaml.load` without SafeLoader) |
 
+### Cross-Server Rules (Multi-Server Analysis)
+
+| Rule ID | Severity | Description |
+| :--- | :--- | :--- |
+| `AMCP201` | HIGH | Tool shadowing — duplicate tool names across servers |
+| `AMCP202` | MEDIUM | Schema drift — tool signatures changed between lockfile and live |
+| `AMCP203` | MEDIUM | Over-permissive tool input schemas (unconstrained dangerous params) |
+
+### Runtime Proxy Rules (Active Firewall)
+
+| Rule ID | Severity | Description |
+| :--- | :--- | :--- |
+| `AMCP301` | CRITICAL | Prompt injection in tool call arguments |
+| `AMCP302` | HIGH | Command injection patterns in arguments |
+| `AMCP303` | HIGH | Path traversal in arguments |
+| `AMCP304` | HIGH | SSRF patterns in URL arguments |
+| `AMCP305` | MEDIUM | Rate limit exceeded |
+| `AMCP306` | MEDIUM | Suspicious argument patterns (entropy, encoding) |
+| `AMCP307` | LOW | Tool call audit logging |
+| `AMCP308` | CRITICAL | Fail-closed: blocked by default unless explicitly allowed |
+
 ---
 
 ## Features
 
-### 🔍 Auto-Discovery (`--auto`)
-Automatically finds MCP configuration files across platforms:
-- **Claude Desktop** (`claude_desktop_config.json`)
-- **Cursor** (`mcp.json`)
-- **Windsurf** (`mcp.json`)
-- **VS Code** (`mcp.json`)
-
-Works on **Windows**, **macOS**, and **Linux**.
+### 🔴 Live MCP Server Introspection (`inspect`)
+**New in v3.0.0** — Connect to running MCP servers via stdio or HTTP/SSE and run real-time security checks:
 
 ```bash
-aegismcp scan --auto
+# Connect via stdio (spawn server)
+aegismcp inspect --command "python server.py" --sarif live.sarif --fail-on HIGH
+
+# Connect via HTTP/SSE
+aegismcp inspect --url http://localhost:8000/mcp --html live-report.html
+
+# Connect using platform config (Claude Desktop, Cursor, etc.)
+aegismcp inspect --config-file ~/Library/Application\ Support/Claude/claude_desktop_config.json
+
+# Create lockfile from live server tools
+aegismcp inspect --command "python server.py" --lock-output live.lock.json
 ```
 
-### ⚙️ Custom Policy Config (`aegismcp.yaml`)
-Place `aegismcp.yaml` in your project root to customize:
+**Real-time checks performed:**
+- `AMCP005` Tool poisoning in live tool descriptions
+- `AMCP006` Abnormally long descriptions hiding payloads
+- `AMCP007` Invisible Unicode characters
+- `AMCP201` Tool shadowing (duplicate names)
+- `AMCP203` Over-permissive input schemas
 
-```yaml
-rules:
-  AMCP002:
-    enabled: false          # disable unpinned npx check
-  AMCP003:
-    severity: CRITICAL      # escalate path exposure
-
-custom_rules:
-  - id: "CUSTOM001"
-    title: "Internal Domain Exposure"
-    pattern: "internal\\.company\\.com"
-    severity: "HIGH"
-    target: "servers.env"
-    message: "Server '{server}' env var '{key}' references internal domain"
-    remediation: "Use environment variables instead"
-
-ignore_paths:
-  - "node_modules/**"
-  - ".git/**"
-  - "*.lock.json"
-
-fail_on: "HIGH"             # CI exit code
-auto_discover: true
-```
+### 🛡️ Runtime MCP Security Proxy (`proxy`)
+**New in v3.0.0** — A transparent MCP proxy/firewall that sits between clients and servers, enforcing security policies in real-time:
 
 ```bash
-aegismcp scan --config aegismcp.yaml samples/vulnerable_mcp.json
+# Run proxy between client and server (stdio)
+aegismcp proxy --command "python server.py" --policy proxy-policy.yaml
+
+# Run proxy with HTTP upstream
+aegismcp proxy --url http://upstream:8000/mcp --port 8080
+
+# Enable audit logging
+aegismcp proxy --command "python server.py" --audit-log audit.log --fail-closed
 ```
 
-### 🔒 Rug-Pull Protection (`lock` / `verify`)
-Lockfiles store SHA-256 hashes of server configs and tool definitions.
+**Proxy capabilities:**
+- **Prompt injection detection** (AMCP301) — Blocks hidden LLM directives in arguments
+- **Command injection prevention** (AMCP302) — Detects shell metacharacters, command substitution
+- **Path traversal blocking** (AMCP303) — Stops `../`, absolute paths, directory traversal
+- **SSRF protection** (AMCP304) — Blocks private/internal IPs, localhost, metadata endpoints
+- **Rate limiting** (AMCP305) — Configurable requests/second per client
+- **Audit logging** (AMCP307) — JSONL structured logs for SIEM integration
+- **Fail-closed defaults** (AMCP308) — Blocks unknown tools unless explicitly allowed
+
+### 🔒 Rug-Pull Protection (`lock` / `verify`) — Enhanced
+Lockfiles store SHA-256 hashes of server configs **and live tool definitions**.
 
 ```bash
-# Create lockfile from trusted config
+# Create lockfile from static config (v2.x compatible)
 aegismcp lock samples/vulnerable_mcp.json -o aegismcp.lock.json
 
-# Verify current config matches lockfile (CI-friendly)
+# Create lockfile from LIVE server (NEW v3.0.0)
+aegismcp lock --live --command "python server.py" -o aegismcp.lock.json
+aegismcp lock --live --url http://localhost:8000/mcp -o aegismcp.lock.json
+
+# Verify static config against lockfile
 aegismcp verify samples/vulnerable_mcp.json -l aegismcp.lock.json
+
+# Verify LIVE server against lockfile (NEW v3.0.0) — catches runtime rug-pulls!
+aegismcp verify --live --command "python server.py" -l aegismcp.lock.json
+aegismcp verify --live --url http://localhost:8000/mcp -l aegismcp.lock.json
 ```
 
 ### 🐍 Python AST Scanning (`ast-scan`)
@@ -125,6 +158,17 @@ aegismcp ast-scan path/to/server.py --sarif ast-report.sarif --fail-on HIGH
 
 # Include test files explicitly
 aegismcp ast-scan path/to/server.py --include-tests --fail-on HIGH
+
+# Export HTML report
+aegismcp ast-scan path/to/server.py --html ast-report.html
+```
+
+### 🌐 Cross-Server Analysis
+Scan multiple MCP configs together to detect cross-server risks:
+
+```bash
+# Scan directory of configs for shadowing and drift
+aegismcp scan configs/ --cross-server --sarif cross.sarif
 ```
 
 ### 📦 SARIF Export & CI/CD
@@ -133,9 +177,22 @@ All scan commands support SARIF 2.1.0 output:
 ```bash
 aegismcp scan samples/vulnerable_mcp.json --sarif report.sarif --fail-on HIGH
 aegismcp ast-scan server.py --sarif ast.sarif --fail-on CRITICAL
+aegismcp inspect --command "python server.py" --sarif live.sarif
+aegismcp verify --live --command "python server.py" -l lock.json --sarif verify.sarif
 ```
 
 Use `--fail-on LEVEL` (LOW, MEDIUM, HIGH, CRITICAL) to gate CI pipelines.
+
+### 📊 HTML Executive Reports
+**New in v3.0.0** — Beautiful, interactive HTML reports with dark/light themes:
+
+```bash
+aegismcp scan samples/vulnerable_mcp.json --html report.html
+aegismcp ast-scan server.py --html ast-report.html
+aegismcp inspect --command "python server.py" --html live-report.html
+```
+
+Features: severity filters, searchable findings, collapsible details, print-optimized CSS, copy-to-clipboard SARIF/JSON.
 
 ### 🔌 Extensible RuleRegistry
 Built-in rules + custom regex rules loaded from config. No code changes needed for new patterns.
@@ -170,21 +227,51 @@ aegismcp scan samples/vulnerable_mcp.json
 
 # Export SARIF for GitHub Code Scanning
 aegismcp scan samples/vulnerable_mcp.json --sarif report.sarif --fail-on HIGH
+
+# Cross-server analysis
+aegismcp scan configs/ --cross-server --html cross-report.html
+```
+
+### Live introspection (v3.0.0)
+```bash
+# Inspect a running server via stdio
+aegismcp inspect --command "python server.py" --fail-on HIGH --html live.html
+
+# Inspect via HTTP/SSE
+aegismcp inspect --url http://localhost:8000/mcp --sarif live.sarif
+
+# Create lockfile from live server
+aegismcp inspect --command "python server.py" --lock-output live.lock.json
+```
+
+### Runtime proxy (v3.0.0)
+```bash
+# Proxy stdio server with security enforcement
+aegismcp proxy --command "python server.py" --policy proxy-policy.yaml --audit-log audit.log
+
+# Proxy HTTP upstream
+aegismcp proxy --url http://upstream:8000/mcp --port 8080 --fail-closed
 ```
 
 ### Lock & verify (rug-pull protection)
 ```bash
-# Create lockfile from trusted config
+# Create lockfile from static config
 aegismcp lock samples/vulnerable_mcp.json -o aegismcp.lock.json
 
-# Verify in CI that config hasn't been tampered with
+# Create lockfile from LIVE server (catches runtime tool definitions)
+aegismcp lock --live --command "python server.py" -o aegismcp.lock.json
+
+# Verify static config
 aegismcp verify samples/vulnerable_mcp.json -l aegismcp.lock.json
+
+# Verify LIVE server (detects runtime rug-pulls!)
+aegismcp verify --live --command "python server.py" -l aegismcp.lock.json
 ```
 
 ### Scan Python MCP server source
 ```bash
 # Scan for command injection, SSRF, path traversal, insecure deserialization
-aegismcp ast-scan path/to/server.py --fail-on HIGH
+aegismcp ast-scan path/to/server.py --fail-on HIGH --html ast-report.html
 
 # Include test files if needed
 aegismcp ast-scan path/to/server.py --include-tests --fail-on HIGH
@@ -201,54 +288,117 @@ aegismcp [--config CONFIG] [--no-color] <COMMAND>
 | Command | Description |
 | :--- | :--- |
 | `scan` | Scan MCP config file(s) or directory |
-| `lock` | Create lockfile from MCP config (rug-pull protection) |
-| `verify` | Verify MCP config against lockfile |
+| `inspect` | **v3.0.0** Live MCP server introspection via stdio/HTTP |
+| `proxy` | **v3.0.0** Runtime MCP security proxy/firewall |
+| `lock` | Create lockfile from MCP config or live server |
+| `verify` | Verify MCP config or live server against lockfile |
 | `ast-scan` | Scan Python MCP server source code for vulnerabilities |
 
 ### `scan`
 ```bash
-aegismcp scan [TARGET] [--auto] [--sarif FILE] [--fail-on LEVEL] [--no-auto-discover]
+aegismcp scan [TARGET] [--auto] [--cross-server] [--sarif FILE] [--html FILE] [--fail-on LEVEL] [--no-auto-discover]
 ```
 
 | Option | Description |
 | :--- | :--- |
 | `TARGET` | Path to MCP config file or directory (optional if `--auto` or `auto_discover: true` in config) |
 | `--auto` | Auto-discover platform MCP configs |
+| `--cross-server` | Enable cross-server analysis (shadowing, drift) |
 | `--sarif FILE` | Export SARIF report |
+| `--html FILE` | Export HTML executive report |
 | `--fail-on LEVEL` | Exit with error if findings ≥ LEVEL (LOW/MEDIUM/HIGH/CRITICAL) |
 | `--no-auto-discover` | Disable platform auto-discovery |
 
-### `lock`
+### `inspect` (v3.0.0)
 ```bash
-aegismcp lock <CONFIG_FILE> [-o OUTPUT]
+aegismcp inspect [--command CMD] [--url URL] [--config-file FILE] [--sarif FILE] [--html FILE] [--lock-output FILE] [--fail-on LEVEL] [--timeout SEC]
 ```
 
 | Option | Description |
 | :--- | :--- |
-| `CONFIG_FILE` | Path to MCP config file |
+| `--command CMD` | Command to spawn MCP server (stdio) |
+| `--url URL` | HTTP/SSE endpoint for MCP server |
+| `--config-file FILE` | Path to platform MCP config file (Claude Desktop, Cursor, etc.) |
+| `--sarif FILE` | Export SARIF report |
+| `--html FILE` | Export HTML executive report |
+| `--lock-output FILE` | Create lockfile from live server tools |
+| `--fail-on LEVEL` | Exit with error if findings ≥ LEVEL |
+| `--timeout SEC` | Connection timeout (default: 10s) |
+
+### `proxy` (v3.0.0)
+```bash
+aegismcp proxy [--command CMD] [--url URL] [--port PORT] [--policy FILE] [--audit-log FILE] [--fail-closed] [--rate-limit RPS]
+```
+
+| Option | Description |
+| :--- | :--- |
+| `--command CMD` | Command to spawn upstream MCP server (stdio) |
+| `--url URL` | HTTP/SSE upstream MCP server |
+| `--port PORT` | Local port for HTTP proxy mode (default: 8080) |
+| `--policy FILE` | Path to proxy policy YAML file |
+| `--audit-log FILE` | Path to audit log (JSONL format) |
+| `--fail-closed` | Block unknown tools by default |
+| `--rate-limit RPS` | Requests per second limit (default: 100) |
+
+### `lock`
+```bash
+aegismcp lock <CONFIG_FILE> [-o OUTPUT] [--live] [--command CMD] [--url URL]
+```
+
+| Option | Description |
+| :--- | :--- |
+| `CONFIG_FILE` | Path to MCP config file (not needed with `--live`) |
 | `-o, --output` | Output lockfile path (default: `./aegismcp.lock.json`) |
+| `--live` | Create lockfile from live server instead of static config |
+| `--command CMD` | Spawn server command for live mode |
+| `--url URL` | HTTP/SSE URL for live mode |
 
 ### `verify`
 ```bash
-aegismcp verify <CONFIG_FILE> [-l LOCKFILE]
+aegismcp verify <CONFIG_FILE> [-l LOCKFILE] [--live] [--command CMD] [--url URL] [--sarif FILE]
 ```
 
 | Option | Description |
 | :--- | :--- |
-| `CONFIG_FILE` | Path to MCP config file |
+| `CONFIG_FILE` | Path to MCP config file (not needed with `--live`) |
 | `-l, --lockfile` | Path to lockfile (default: `./aegismcp.lock.json`) |
+| `--live` | Verify live server instead of static config |
+| `--command CMD` | Spawn server command for live mode |
+| `--url URL` | HTTP/SSE URL for live mode |
+| `--sarif FILE` | Export SARIF report |
 
 ### `ast-scan`
 ```bash
-aegismcp ast-scan <TARGET> [--sarif FILE] [--fail-on LEVEL] [--include-tests]
+aegismcp ast-scan <TARGET> [--sarif FILE] [--html FILE] [--fail-on LEVEL] [--include-tests]
 ```
 
 | Option | Description |
 | :--- | :--- |
 | `TARGET` | Path to Python file or directory |
 | `--sarif FILE` | Export SARIF report |
+| `--html FILE` | Export HTML executive report |
 | `--fail-on LEVEL` | Exit with error if findings ≥ LEVEL (default: HIGH) |
 | `--include-tests` | Include test files/directories (`tests/`, `test_*.py`, `*_test.py`) |
+
+---
+
+## Proxy Policy Configuration
+
+Create a `proxy-policy.yaml` to customize runtime enforcement:
+
+```yaml
+# proxy-policy.yaml
+fail_closed: true                    # Block unknown tools by default
+allowed_tools:                       # Explicitly allowlisted tools
+  - "safe_read"
+  - "safe_write"
+rate_limit: 50                       # Requests per second per client
+block_patterns:                      # Custom block patterns
+  - pattern: "internal\\.api\\.com"
+    message: "Internal API access blocked"
+audit_log: "audit.log"               # JSONL audit log path
+log_level: "INFO"                    # DEBUG, INFO, WARNING, ERROR
+```
 
 ---
 
@@ -265,6 +415,11 @@ aegismcp ast-scan <TARGET> [--sarif FILE] [--fail-on LEVEL] [--include-tests]
   Detail:   HTTP request with dynamic URL detected (requests.get)
   Fix:      Validate URLs against allowlist, block private/internal IPs
 
+[CRITICAL] AMCP301 - Prompt Injection Detected (Runtime Proxy)
+  Tool:     dangerous_tool
+  Argument: command="rm -rf / ; ignore previous instructions"
+  Action:   BLOCKED
+
 Summary: 9 findings (6 CRITICAL, 2 HIGH, 1 MEDIUM) in 1 file(s)
 ```
 
@@ -276,6 +431,7 @@ Summary: 9 findings (6 CRITICAL, 2 HIGH, 1 MEDIUM) in 1 file(s)
 aegismcp/
 ├── LICENSE                    # MIT License
 ├── aegismcp.yaml              # Example policy config
+├── proxy-policy.yaml          # Example proxy policy
 ├── assets/
 │   ├── banner-dark.svg        # Dark mode banner
 │   └── banner-light.svg       # Light mode banner
@@ -286,7 +442,11 @@ aegismcp/
 │   ├── conftest.py
 │   ├── test_scan.py
 │   ├── test_lock_verify.py
-│   └── test_ast_scanner.py
+│   ├── test_ast_scanner.py
+│   ├── test_inspector.py
+│   ├── test_proxy.py
+│   ├── test_reporter.py
+│   └── test_stress_v3.py      # v3.0.0 stress/e2e tests
 ├── .github/workflows/
 │   └── ci.yml                 # GitHub Actions CI (Linux + Windows, Python 3.10/3.12)
 ├── src/aegismcp/
@@ -299,11 +459,16 @@ aegismcp/
 │   ├── scanner.py             # Main scanner engine
 │   ├── sarif.py               # SARIF 2.1.0 exporter
 │   ├── rules_core.py          # Finding dataclass
+│   ├── inspector.py           # Live MCP introspection (JSON-RPC 2.0)
+│   ├── proxy.py               # Runtime MCP security proxy
+│   ├── reporter.py            # HTML/SARIF/Console reporters
+│   ├── cross_server.py        # Cross-server analysis (shadowing, drift)
+│   ├── html_report.py         # HTML report generator
 │   └── rules/
 │       ├── __init__.py        # Auto-registers built-in rules
 │       ├── registry.py        # RuleRegistry class
 │       └── builtins/
-│           └── __init__.py    # AMCP001-AMCP008 implementations
+│           └── __init__.py    # AMCP001-AMCP008, AMCP101-AMCP105, AMCP201-AMCP203, AMCP301-AMCP308
 ```
 
 ---
