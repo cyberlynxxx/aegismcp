@@ -1,14 +1,33 @@
-# AegisMCP 🛡️
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+  <img alt="AegisMCP — Security Scanner for MCP & AI Agents" src="assets/banner-light.svg" width="520">
+</picture>
 
-A lightweight, open-source Python security scanner and CI/CD linter for **Model Context Protocol (MCP)** configurations and AI agent tool definitions.
+<p align="center">
+  <strong>A lightweight, open-source Python security scanner and CI/CD linter for <strong>Model Context Protocol (MCP)</strong> configurations and AI agent tool definitions.</strong>
+</p>
 
-> **Version 2.0.1** — Phase 1: Auto-discovery, policy config, rug-pull protection, AST scanning, SARIF export. Fixes: scan --auto, AST false positives, tests, CI.
+<p align="center">
+  <a href="https://github.com/cyberlynxxx/aegismcp/actions/workflows/ci.yml">
+    <img alt="CI" src="https://github.com/cyberlynxxx/aegismcp/actions/workflows/ci.yml/badge.svg">
+  </a>
+  <a href="https://github.com/cyberlynxxx/aegismcp/releases/latest">
+    <img alt="Latest Release" src="https://img.shields.io/github/v/release/cyberlynxxx/aegismcp?color=brightgreen">
+  </a>
+  <a href="LICENSE">
+    <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg">
+  </a>
+  <a href="https://www.python.org/downloads/">
+    <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue.svg">
+  </a>
+</p>
 
----
-
-## Demo
-
-<!-- TODO: Add terminal screenshot or GIF here showing `aegismcp scan --auto` output -->
+<p align="center">
+  <a href="#features">Features</a> · 
+  <a href="#quick-start">Quick Start</a> · 
+  <a href="#-python-ast-scanning-ast-scan">AST Scan</a> · 
+  <a href="https://github.com/cyberlynxxx/aegismcp/releases">Releases</a>
+</p>
 
 ---
 
@@ -126,19 +145,49 @@ All CLI output uses `[OK]`/`[FAIL]` markers (no Unicode symbols), colored output
 
 ---
 
-## Installation
+## Quick Start
 
 ```bash
-# From GitHub
+# Install from GitHub
 pip install git+https://github.com/cyberlynxxx/aegismcp.git
 
-# From source (editable)
+# Or from source (editable)
 git clone https://github.com/cyberlynxxx/aegismcp
 cd aegismcp
 pip install -e .
 
 # With dev dependencies (for testing)
 pip install -e ".[dev]"
+```
+
+### Scan your MCP configs
+```bash
+# Auto-discover platform configs (Claude Desktop, Cursor, Windsurf, VS Code)
+aegismcp scan --auto
+
+# Scan a specific config file
+aegismcp scan samples/vulnerable_mcp.json
+
+# Export SARIF for GitHub Code Scanning
+aegismcp scan samples/vulnerable_mcp.json --sarif report.sarif --fail-on HIGH
+```
+
+### Lock & verify (rug-pull protection)
+```bash
+# Create lockfile from trusted config
+aegismcp lock samples/vulnerable_mcp.json -o aegismcp.lock.json
+
+# Verify in CI that config hasn't been tampered with
+aegismcp verify samples/vulnerable_mcp.json -l aegismcp.lock.json
+```
+
+### Scan Python MCP server source
+```bash
+# Scan for command injection, SSRF, path traversal, insecure deserialization
+aegismcp ast-scan path/to/server.py --fail-on HIGH
+
+# Include test files if needed
+aegismcp ast-scan path/to/server.py --include-tests --fail-on HIGH
 ```
 
 ---
@@ -227,6 +276,9 @@ Summary: 9 findings (6 CRITICAL, 2 HIGH, 1 MEDIUM) in 1 file(s)
 aegismcp/
 ├── LICENSE                    # MIT License
 ├── aegismcp.yaml              # Example policy config
+├── assets/
+│   ├── banner-dark.svg        # Dark mode banner
+│   └── banner-light.svg       # Light mode banner
 ├── samples/
 │   ├── vulnerable_mcp.json    # Test config with all rule triggers
 │   └── test_server.py         # Test Python server with AST vulnerabilities
