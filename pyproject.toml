@@ -35,6 +35,9 @@ dev = [
     "pytest-cov>=4.0",
 ]
 
+[project.scripts]
+aegismcp = "aegismcp.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
