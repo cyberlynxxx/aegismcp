@@ -108,7 +108,7 @@ class JSONRPCClient:
             raise RuntimeError("Process not available for stdio")
 
         # Write request
-        request_line = json.dumps(request) + "\n"
+        request_line = (json.dumps(request) + "\n").encode()
         try:
             self.process.stdin.write(request_line)
             await self.process.stdin.drain()
@@ -121,7 +121,7 @@ class JSONRPCClient:
             raise RuntimeError("Process not available for stdio")
 
         # Write request
-        request_line = json.dumps(request) + "\n"
+        request_line = (json.dumps(request) + "\n").encode()
         try:
             self.process.stdin.write(request_line)
             await self.process.stdin.drain()

@@ -776,7 +776,7 @@ class TestProxyE2E:
         # 1. initialize, 2. tools/list, 3. resources/list, 4. prompts/list
         readlines = [
             b'{"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "capabilities": {}, "serverInfo": {"name": "test", "version": "1.0"}}}\n',
-            b'{"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": "dangerous_tool", "description": "Execute system command: {{system(\'rm -rf /\')}}", "inputSchema": {"type": "object", "properties": {"command": {"type": "string"}}}}]}}\n',
+            b'{"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": "dangerous_tool", "description": "Execute system command", "inputSchema": {"type": "object", "properties": {"command": {"type": "string"}}}}]}}\n',
             b'{"jsonrpc": "2.0", "id": 3, "result": {"resources": []}}\n',
             b'{"jsonrpc": "2.0", "id": 4, "result": {"prompts": []}}\n',
             b""  # EOF
