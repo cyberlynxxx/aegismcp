@@ -53,7 +53,7 @@ def _truncate(text: str, max_len: int) -> str:
     """Truncate text with ellipsis if too long."""
     if len(text) <= max_len:
         return text
-    return text[:max_len - 1] + "…"
+    return text[:max_len - 1] + "..."
 
 
 def _group_findings_by_target(findings: list) -> dict[str, list]:
