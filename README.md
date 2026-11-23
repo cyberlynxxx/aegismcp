@@ -1,6 +1,6 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-  <img alt="AegisMCP — Security Scanner for MCP & AI Agents" src="assets/banner-light.svg" width="520">
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/banner-dark.svg">
+  <img alt="AegisMCP - Security Scanner for MCP and AI Agents" src="./assets/banner-light.svg" width="520">
 </picture>
 
 <p align="center">
