@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aegismcp"
-version = "3.0.0"
+version = "3.0.1"
 description = "Active MCP Security Engine & Runtime Firewall — live introspection, runtime proxy, cross-server rules, executive reporting."
 readme = "README.md"
 requires-python = ">=3.10"

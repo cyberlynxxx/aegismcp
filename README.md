@@ -78,6 +78,7 @@
 | `AMCP306` | MEDIUM | Suspicious argument patterns (entropy, encoding) |
 | `AMCP307` | LOW | Tool call audit logging |
 | `AMCP308` | CRITICAL | Fail-closed: blocked by default unless explicitly allowed |
+| `AMCP309` | CRITICAL | Server-to-client response inspection (indirect prompt injection, secret leakage, invisible Unicode) |
 
 ---
 
@@ -108,7 +109,7 @@ aegismcp inspect --command "python server.py" --lock-output live.lock.json
 - `AMCP203` Over-permissive input schemas
 
 ### 🛡️ Runtime MCP Security Proxy (`proxy`)
-**New in v3.0.0** — A transparent MCP proxy/firewall that sits between clients and servers, enforcing security policies in real-time:
+**New in v3.0.1** — A transparent MCP proxy/firewall that sits between clients and servers, enforcing security policies in real-time with bidirectional protection:
 
 ```bash
 # Run proxy between client and server (stdio)
@@ -122,13 +123,16 @@ aegismcp proxy --command "python server.py" --audit-log audit.log --fail-closed
 ```
 
 **Proxy capabilities:**
-- **Prompt injection detection** (AMCP301) — Blocks hidden LLM directives in arguments
+- **Prompt injection detection** (AMCP301/AMCP309) — Blocks hidden LLM directives in arguments and responses
+- **Anti-evasion normalizer** — Multi-stage URL/Base64/Hex decoding, Unicode NFKC normalization
+- **Weighted scoring engine** — STRICT/BALANCED modes with configurable thresholds via policy
 - **Command injection prevention** (AMCP302) — Detects shell metacharacters, command substitution
 - **Path traversal blocking** (AMCP303) — Stops `../`, absolute paths, directory traversal
-- **SSRF protection** (AMCP304) — Blocks private/internal IPs, localhost, metadata endpoints
+- **SSRF protection** (AMCP304) — Blocks private/internal IPs, localhost, metadata endpoints, alternative formats
 - **Rate limiting** (AMCP305) — Configurable requests/second per client
 - **Audit logging** (AMCP307) — JSONL structured logs for SIEM integration
 - **Fail-closed defaults** (AMCP308) — Blocks unknown tools unless explicitly allowed
+- **Server-to-client response inspection** (AMCP309) — Detects indirect prompt injection, secret leakage, invisible Unicode in tool results
 
 ### 🔒 Rug-Pull Protection (`lock` / `verify`) — Enhanced
 Lockfiles store SHA-256 hashes of server configs **and live tool definitions**.
@@ -325,7 +329,7 @@ aegismcp inspect [--command CMD] [--url URL] [--config-file FILE] [--sarif FILE]
 | `--fail-on LEVEL` | Exit with error if findings ≥ LEVEL |
 | `--timeout SEC` | Connection timeout (default: 10s) |
 
-### `proxy` (v3.0.0)
+### `proxy` (v3.0.1)
 ```bash
 aegismcp proxy [--command CMD] [--url URL] [--port PORT] [--policy FILE] [--audit-log FILE] [--fail-closed] [--rate-limit RPS]
 ```
@@ -339,6 +343,14 @@ aegismcp proxy [--command CMD] [--url URL] [--port PORT] [--policy FILE] [--audi
 | `--audit-log FILE` | Path to audit log (JSONL format) |
 | `--fail-closed` | Block unknown tools by default |
 | `--rate-limit RPS` | Requests per second limit (default: 100) |
+
+#### Proxy Policy Options (proxy-policy.yaml)
+
+| Setting | Description |
+| :--- | :--- |
+| `prompt_injection_mode` | `balanced` (default) or `strict` - weighted scoring threshold |
+| `blocked_response_patterns` | List of regex patterns that trigger response blocking |
+| `max_decode_depth` | Maximum iterations for normalization decoding (default: 5) |
 
 ### `lock`
 ```bash
@@ -389,6 +401,7 @@ Create a `proxy-policy.yaml` to customize runtime enforcement:
 ```yaml
 # proxy-policy.yaml
 fail_closed: true                    # Block unknown tools by default
+prompt_injection_mode: "balanced"    # STRICT or BALANCED - weighted scoring mode
 allowed_tools:                       # Explicitly allowlisted tools
   - "safe_read"
   - "safe_write"

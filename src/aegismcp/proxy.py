@@ -19,7 +19,16 @@ except ImportError:
     httpx = None
 
 from .inspector import JSONRPCClient, MCPInspector, InspectorOptions
-from .rules_core import Finding
+from .rules_core import (
+    Finding,
+    SECRET_PATTERNS,
+    PROMPT_INJECTION_PATTERNS,
+    RESPONSE_INJECTION_PATTERNS,
+    RESPONSE_SECRET_PATTERNS,
+    RESPONSE_INVISIBLE_UNICODE_PATTERNS,
+)
+from .normalizer import Normalizer, is_suspicious_ip
+from .scoring import PromptInjectionScorer, ScoringMode, create_scorer_from_config
 from .reporter import print_report, ReportOptions
 
 
@@ -41,6 +50,13 @@ class ProxyConfig:
     block_medium: bool = False
     block_low: bool = False
 
+    # Prompt injection scoring
+    prompt_injection_mode: str = "balanced"  # "strict" or "balanced"
+    response_scanning_enabled: bool = True
+
+    # Anti-evasion normalizer
+    normalizer_max_iterations: int = 5
+
     # Audit logging
     audit_log: Optional[Path] = None
     audit_format: str = "jsonl"  # jsonl or text
@@ -52,6 +68,9 @@ class ProxyConfig:
     # Connection
     timeout: float = 30.0
     max_concurrent: int = 50
+
+    # Custom patterns (loaded from policy file)
+    custom_prompt_injection_patterns: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -129,6 +148,18 @@ class MCPProxy:
         self.request_count = 0
         self.blocked_count = 0
         self.logger = logging.getLogger("aegismcp.proxy")
+
+        # Initialize prompt injection scorer
+        mode = ScoringMode.STRICT if config.prompt_injection_mode == "strict" else ScoringMode.BALANCED
+        self.scorer = PromptInjectionScorer(mode=mode)
+        if config.custom_prompt_injection_patterns:
+            self.scorer = create_scorer_from_config({
+                "prompt_injection_mode": config.prompt_injection_mode,
+                "custom_prompt_injection_patterns": config.custom_prompt_injection_patterns,
+            })
+
+        # Initialize normalizer
+        self.normalizer = Normalizer()
 
     async def start(self):
         """Start the proxy - connect to upstream server and begin listening."""
@@ -236,18 +267,11 @@ class MCPProxy:
 
         if not allowed:
             self.blocked_count += 1
+            blocked_response = self._create_blocked_response(request_id, findings)
             return web.Response(
                 status=403,
                 content_type="application/json",
-                text=json.dumps({
-                    "jsonrpc": "2.0",
-                    "id": request_id,
-                    "error": {
-                        "code": -32603,
-                        "message": "Request blocked by security policy",
-                        "data": {"findings": [f.rule_id for f in findings]}
-                    }
-                })
+                text=json.dumps(blocked_response)
             )
 
         # Forward to upstream
@@ -255,19 +279,29 @@ class MCPProxy:
             response = await self._forward_to_upstream(rpc_request)
             self.request_count += 1
 
-            # Scan response if it contains tools/list result
-            if method == "tools/list" and response.get("result"):
-                resp_findings = self._scan_response(method, response)
-                if resp_findings:
-                    await self._audit_request(AuditEntry(
-                        timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        request_id=str(request_id),
-                        method=method,
-                        direction="response",
-                        client_ip=client_ip,
-                        allowed=True,
-                        findings=resp_findings,
-                    ))
+            # Scan response for AMCP309 threats
+            resp_findings = self._scan_response(method, response)
+
+            if resp_findings:
+                await self._audit_request(AuditEntry(
+                    timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    request_id=str(request_id),
+                    method=method,
+                    direction="response",
+                    client_ip=client_ip,
+                    allowed=self._should_block(resp_findings),
+                    findings=resp_findings,
+                ))
+
+                # Check if response should be blocked
+                if self._should_block(resp_findings):
+                    self.blocked_count += 1
+                    blocked_response = self._create_blocked_response(request_id, resp_findings)
+                    return web.Response(
+                        status=403,
+                        content_type="application/json",
+                        text=json.dumps(blocked_response)
+                    )
 
             return web.Response(
                 content_type="application/json",
@@ -303,10 +337,13 @@ class MCPProxy:
         method = request.get("method", "")
         params = request.get("params", {})
 
+        # Normalize params first (anti-evasion)
+        normalized_params = self.normalizer.normalize_dict(params, self.config.normalizer_max_iterations)
+
         # Scan tool calls for injection
         if method == "tools/call":
-            tool_name = params.get("name", "")
-            arguments = params.get("arguments", {})
+            tool_name = normalized_params.get("name", "")
+            arguments = normalized_params.get("arguments", {})
 
             # Find the tool definition
             tool = next((t for t in self.server_info.tools if t.name == tool_name), None)
@@ -315,7 +352,7 @@ class MCPProxy:
                 arg_findings = self._validate_tool_arguments(tool, arguments)
                 findings.extend(arg_findings)
 
-                # Check for prompt injection in string arguments
+                # Check for prompt injection in string arguments using weighted scorer
                 for key, value in arguments.items():
                     if isinstance(value, str):
                         inj_findings = self._check_prompt_injection(value, f"tools.{tool_name}.arguments.{key}")
@@ -323,7 +360,7 @@ class MCPProxy:
 
         # Scan resource access
         elif method in ("resources/read", "resources/list"):
-            uri = params.get("uri", "")
+            uri = normalized_params.get("uri", "")
             if uri and self._is_suspicious_uri(uri):
                 findings.append(Finding(
                     rule_id="AMCP301",
@@ -333,6 +370,26 @@ class MCPProxy:
                     location=f"resources.{method}",
                     remediation="Validate resource URIs against allowlist; block file://, internal IPs"
                 ))
+
+            # Enhanced SSRF check using normalizer
+            if uri and is_suspicious_ip(uri):
+                findings.append(Finding(
+                    rule_id="AMCP301",
+                    severity="HIGH",
+                    title="SSRF Attempt - Suspicious IP in URI",
+                    message=f"Resource URI contains suspicious IP address: {uri}",
+                    location=f"resources.{method}",
+                    remediation="Block access to internal/private IP addresses"
+                ))
+
+        # Scan prompt arguments
+        elif method in ("prompts/get", "prompts/list"):
+            prompt_name = normalized_params.get("name", "")
+            arguments = normalized_params.get("arguments", {})
+            for key, value in arguments.items():
+                if isinstance(value, str):
+                    inj_findings = self._check_prompt_injection(value, f"prompts.{prompt_name}.arguments.{key}")
+                    findings.extend(inj_findings)
 
         # Determine if request should be blocked
         blocked = self._should_block(findings)
@@ -436,23 +493,43 @@ class MCPProxy:
         return findings
 
     def _check_prompt_injection(self, text: str, location: str) -> list[Finding]:
-        """Check text for prompt injection patterns."""
-        from .rules_core import PROMPT_INJECTION_PATTERNS
+        """Check text for prompt injection patterns using weighted scorer."""
         import re
+        from .rules_core import Finding
         findings = []
 
-        for pattern_name, pattern in PROMPT_INJECTION_PATTERNS:
-            if pattern.search(text):
-                findings.append(Finding(
-                    rule_id="AMCP005",
-                    severity="CRITICAL",
-                    title=f"Prompt Injection in Runtime Argument ({pattern_name})",
-                    message=f"Argument at {location} matches suspicious prompt injection pattern",
-                    location=location,
-                    remediation="Sanitize input; reject requests with prompt injection patterns"
-                ))
+        # Use weighted scorer
+        result = self.scorer.score(text)
 
-        # Check for dangerous command patterns (command injection)
+        for pattern in result.triggered_patterns:
+            # Map risk level to severity
+            severity_map = {
+                "CRITICAL": "CRITICAL",
+                "HIGH": "HIGH",
+                "MEDIUM": "MEDIUM",
+                "LOW": "LOW",
+            }
+            severity = severity_map.get(pattern.category.upper(), "MEDIUM")
+            # Override for high-weight patterns
+            if pattern.weight >= 0.85:
+                severity = "CRITICAL"
+            elif pattern.weight >= 0.7:
+                severity = "HIGH"
+            elif pattern.weight >= 0.4:
+                severity = "MEDIUM"
+            else:
+                severity = "LOW"
+
+            findings.append(Finding(
+                rule_id="AMCP005",
+                severity=severity,
+                title=f"Prompt Injection Detected ({pattern.name})",
+                message=f"Argument at {location} matches pattern: {pattern.name} (weight: {pattern.weight})",
+                location=location,
+                remediation="Sanitize input; reject requests with prompt injection patterns"
+            ))
+
+        # Check for dangerous command patterns (command injection) - keep existing
         dangerous_cmd_patterns = [
             (r"rm\s+-rf\s+/", "Recursive Root Deletion"),
             (r"rm\s+-rf\s+~", "Recursive Home Deletion"),
@@ -477,17 +554,23 @@ class MCPProxy:
                     remediation="Reject requests with dangerous command patterns; use allowlists for commands"
                 ))
 
-        # Check for invisible Unicode
-        invisible_chars = [ch for ch in text if ch in ("​", "‌", "‍", "⁠", "﻿", "‪", "‫", "‬", "‭", "‮")]
-        if invisible_chars:
-            findings.append(Finding(
-                rule_id="AMCP007",
-                severity="CRITICAL",
-                title="Invisible Unicode in Runtime Argument",
-                message=f"Argument at {location} contains {len(invisible_chars)} invisible Unicode character(s)",
-                location=location,
-                remediation="Strip zero-width and bidi characters from all inputs"
-            ))
+        # Check for invisible Unicode using normalizer's patterns
+        invisible_patterns = [
+            ("Zero-Width Characters", re.compile(r"[​-‏﻿]")),
+            ("Bidi Override Characters", re.compile(r"[‪-‮⁦-⁩]")),
+            ("Invisible Separators", re.compile(r"[⁠-⁤]")),
+            ("Format Characters", re.compile(r"[᠎]")),
+        ]
+        for pattern_name, pattern in invisible_patterns:
+            if pattern.search(text):
+                findings.append(Finding(
+                    rule_id="AMCP007",
+                    severity="CRITICAL",
+                    title=f"Invisible Unicode in Runtime Argument ({pattern_name})",
+                    message=f"Argument at {location} contains invisible Unicode character(s): {pattern_name}",
+                    location=location,
+                    remediation="Strip zero-width and bidi characters from all inputs"
+                ))
 
         return findings
 
@@ -521,13 +604,22 @@ class MCPProxy:
         return any(pattern in uri_lower for pattern in suspicious_patterns)
 
     def _scan_response(self, method: str, response: dict) -> list[Finding]:
-        """Scan response for issues (e.g., tool list changes)."""
+        """Scan response for AMCP309 threats: indirect prompt injection, secret leakage, invisible Unicode."""
+        from .rules_core import (
+            Finding, RESPONSE_INJECTION_PATTERNS,
+            RESPONSE_SECRET_PATTERNS, RESPONSE_INVISIBLE_UNICODE_PATTERNS
+        )
+
+        if not self.config.response_scanning_enabled:
+            return []
+
         if not self.inspector or not self.server_info:
             return []
 
         findings = []
         result = response.get("result", {})
 
+        # Existing tool list change detection (AMCP307, AMCP308)
         if method == "tools/list" and "tools" in result:
             current_tools = {t["name"]: t for t in result["tools"]}
             known_tools = {t.name: t for t in self.server_info.tools}
@@ -558,6 +650,48 @@ class MCPProxy:
                             remediation="Investigate immediately - possible tool poisoning/rug-pull"
                         ))
 
+        # AMCP309: Response inspection for tools/call results, resources/read, prompts/get
+        if method in ("tools/call", "resources/read", "prompts/get"):
+            # Extract all string content from response
+            strings = self.normalizer.extract_all_strings(result)
+
+            for text in strings:
+                # 1. Check for indirect prompt injection in responses
+                for pattern_name, pattern in RESPONSE_INJECTION_PATTERNS:
+                    if pattern.search(text):
+                        findings.append(Finding(
+                            rule_id="AMCP309",
+                            severity="CRITICAL",
+                            title=f"Indirect Prompt Injection in Response ({pattern_name})",
+                            message=f"Server response contains indirect prompt injection pattern: {pattern_name}",
+                            location=f"response.{method}",
+                            remediation="Block or sanitize responses containing indirect injection directives"
+                        ))
+
+                # 2. Check for secret leakage in responses
+                for pattern_name, pattern in RESPONSE_SECRET_PATTERNS:
+                    if pattern.search(text):
+                        findings.append(Finding(
+                            rule_id="AMCP309",
+                            severity="CRITICAL",
+                            title=f"Secret Leakage in Response ({pattern_name})",
+                            message=f"Server response contains leaked secret: {pattern_name}",
+                            location=f"response.{method}",
+                            remediation="Ensure server does not return secrets; rotate compromised credentials"
+                        ))
+
+                # 3. Check for invisible Unicode in responses
+                for pattern_name, pattern in RESPONSE_INVISIBLE_UNICODE_PATTERNS:
+                    if pattern.search(text):
+                        findings.append(Finding(
+                            rule_id="AMCP309",
+                            severity="HIGH",
+                            title=f"Invisible Unicode in Response ({pattern_name})",
+                            message=f"Server response contains invisible Unicode characters: {pattern_name}",
+                            location=f"response.{method}",
+                            remediation="Strip zero-width and bidi characters from server responses"
+                        ))
+
         return findings
 
     def _should_block(self, findings: list[Finding]) -> bool:
@@ -572,6 +706,31 @@ class MCPProxy:
             if f.severity == "LOW" and self.config.block_low:
                 return True
         return False
+
+    def _create_blocked_response(self, request_id: Any, findings: list[Finding]) -> dict:
+        """Create a JSON-RPC 2.0 error response for blocked requests (code -32001)."""
+        finding_details = [
+            {
+                "rule_id": f.rule_id,
+                "severity": f.severity,
+                "title": f.title,
+                "message": f.message,
+                "location": f.location,
+            }
+            for f in findings
+        ]
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {
+                "code": -32001,
+                "message": "Request blocked by security policy",
+                "data": {
+                    "findings": finding_details,
+                    "block_reason": "security_policy_violation"
+                }
+            }
+        }
 
     async def _audit_request(self, entry: AuditEntry):
         """Write audit log entry."""

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2026-11-24
+
+### Fixed
+- **Phase 1 hardening**: Bidirectional Anti-Evasion Runtime Proxy complete (AMCP309)
+  - Server-to-client response inspection for indirect prompt injection/secret leakage/invisible Unicode
+  - Multi-stage anti-evasion normalizer (Unicode NFKC, iterative URL/Base64/Hex decoding, enhanced SSRF for alternative IP formats)
+  - Weighted prompt injection scoring engine with strict/balanced modes configurable via proxy-policy.yaml
+  - Protocol-safe async blocking with JSON-RPC 2.0 error objects (code: -32001)
+  - Three regex fixes in rules_core.py enabling all 32 tests to pass
+
+### Added
+- AMCP309 server-to-client response inspection module
+- PromptInjectionScorer with ScoringMode enum (STRICT/BALANCED) and InjectionPattern dataclass
+- Normalizer class with multi-stage decoding pipeline (NFKC, URL, Base64, Hex)
+- is_suspicious_ip() enhanced SSRF detection for IPv4/IPv6/decimal/hex/octal formats
+- create_scorer_from_config() for policy file integration
+- RESPONSE_INJECTION_PATTERNS, RESPONSE_SECRET_PATTERNS, RESPONSE_INVISIBLE_UNICODE_PATTERNS in rules_core.py
+- `prompt_injection_mode` setting in proxy-policy.yaml (strict/balanced)
+- Version bump to 3.0.1 across all package files
+
 ## [3.0.0] - 2026-11-23
 
 ### Added

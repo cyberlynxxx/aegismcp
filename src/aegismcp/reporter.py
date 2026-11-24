@@ -1,4 +1,4 @@
-"""Clean, scannable CLI reporter for AegisMCP v3.0.0."""
+"""Clean, scannable CLI reporter for AegisMCP v3.0.1."""
 from __future__ import annotations
 
 import sys

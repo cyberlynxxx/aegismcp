@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
-Adversarial/Stress Test Suite for AegisMCP v3.0.0
+Adversarial/Stress Test Suite for AegisMCP v3.0.1
 
-This module contains heavy stress tests for the new v3.0.0 features:
+This module contains heavy stress tests for the new v3.0.1 features:
 - Mock MCP stdio server for testing
 - Evasion payloads (prompt injection, Unicode, schema bypass)
 - Fault injection (timeouts, malformed JSON, connection drops)
@@ -10,7 +10,7 @@ This module contains heavy stress tests for the new v3.0.0 features:
 - Scale test (1000+ tools, rapid requests)
 - XSS self-test (HTML report renders untrusted content safely)
 - Proxy e2e test (full request/response cycle with blocking)
-- v3.0.0 regression test suite
+- v3.0.1 regression test suite
 """
 
 import asyncio
@@ -901,11 +901,11 @@ class TestProxyE2E:
 
 
 # ============================================================================
-# TESTS: v3.0.0 Regression
+# TESTS: v3.0.1 Regression
 # ============================================================================
 
 class TestV300Regression:
-    """Regression tests to ensure v3.0.0 functionality still works."""
+    """Regression tests to ensure v3.0.1 functionality still works."""
 
     def test_lock_verify_still_works(self):
         """Test lock/verify commands still work."""
