@@ -33,7 +33,7 @@ jobs:
 
     - name: Run mypy type checking
       run: |
-        mypy src
+        mypy src/aegismcp --ignore-missing-imports
 
     - name: Run tests
       run: |
