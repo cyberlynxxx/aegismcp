@@ -14,33 +14,24 @@
   <a href="https://github.com/cyberlynxxx/aegismcp/releases/latest">
     <img alt="Latest Release" src="https://img.shields.io/github/v/release/cyberlynxxx/aegismcp?color=brightgreen">
   </a>
+  <a href="https://pypi.org/project/aegismcp-security/">
+    <img alt="PyPI" src="https://img.shields.io/pypi/v/aegismcp-security?color=blue&label=PyPI">
+  </a>
   <a href="LICENSE">
     <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg">
   </a>
   <a href="https://www.python.org/downloads/">
     <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue.svg">
   </a>
-  <a href="https://pypi.org/project/aegismcp/">
-    <img alt="PyPI" src="https://img.shields.io/pypi/v/aegismcp?color=blue">
-  </a>
 </p>
 
 <p align="center">
   <a href="#features">Features</a> ·
   <a href="#quick-start">Quick Start</a> ·
-  <a href="#-live-introspection-inspect">Live Inspect</a> ·
-  <a href="#-runtime-proxy-firewall-proxy">Runtime Proxy</a> ·
-  <a href="#-html-reports">HTML Reports</a> ·
+  <a href="#live-introspection-inspect">Live Inspect</a> ·
+  <a href="#runtime-proxy-firewall-proxy">Runtime Proxy</a> ·
+  <a href="#html-reports">HTML Reports</a> ·
   <a href="#benchmarks">Benchmarks</a> ·
-  <a href="https://github.com/cyberlynxxx/aegismcp/releases">Releases</a>
-</p>
-
-<p align="center">
-  <a href="#features">Features</a> ·
-  <a href="#quick-start">Quick Start</a> ·
-  <a href="#-live-introspection-inspect">Live Inspect</a> ·
-  <a href="#-runtime-proxy-firewall-proxy">Runtime Proxy</a> ·
-  <a href="#-html-reports">HTML Reports</a> ·
   <a href="https://github.com/cyberlynxxx/aegismcp/releases">Releases</a>
 </p>
 
@@ -97,7 +88,7 @@
 
 ## Features
 
-### 🔴 Live MCP Server Introspection (`inspect`)
+### Live MCP Server Introspection (`inspect`)
 **New in v3.0.0** — Connect to running MCP servers via stdio or HTTP/SSE and run real-time security checks:
 
 ```bash
@@ -121,8 +112,8 @@ aegismcp inspect --command "python server.py" --lock-output live.lock.json
 - `AMCP201` Tool shadowing (duplicate names)
 - `AMCP203` Over-permissive input schemas
 
-### 🛡️ Runtime MCP Security Proxy (`proxy`)
-**New in v3.0.1** — A transparent MCP proxy/firewall that sits between clients and servers, enforcing security policies in real-time with bidirectional protection:
+### Runtime MCP Security Proxy (`proxy`)
+**New in v3.0.0** — A transparent MCP proxy/firewall that sits between clients and servers, enforcing security policies in real-time with bidirectional protection:
 
 ```bash
 # Run proxy between client and server (stdio)
@@ -147,7 +138,7 @@ aegismcp proxy --command "python server.py" --audit-log audit.log --fail-closed
 - **Fail-closed defaults** (AMCP308) — Blocks unknown tools unless explicitly allowed
 - **Server-to-client response inspection** (AMCP309) — Detects indirect prompt injection, secret leakage, invisible Unicode in tool results
 
-### 🔒 Rug-Pull Protection (`lock` / `verify`) — Enhanced
+### Rug-Pull Protection (`lock` / `verify`) — Enhanced
 Lockfiles store SHA-256 hashes of server configs **and live tool definitions**.
 
 ```bash
@@ -166,7 +157,7 @@ aegismcp verify --live --command "python server.py" -l aegismcp.lock.json
 aegismcp verify --live --url http://localhost:8000/mcp -l aegismcp.lock.json
 ```
 
-### 🐍 Python AST Scanning (`ast-scan`)
+### Python AST Scanning (`ast-scan`)
 Static analysis of Python MCP server source code for runtime vulnerabilities:
 
 ```bash
@@ -180,7 +171,7 @@ aegismcp ast-scan path/to/server.py --include-tests --fail-on HIGH
 aegismcp ast-scan path/to/server.py --html ast-report.html
 ```
 
-### 🌐 Cross-Server Analysis
+### Cross-Server Analysis
 Scan multiple MCP configs together to detect cross-server risks:
 
 ```bash
@@ -188,7 +179,7 @@ Scan multiple MCP configs together to detect cross-server risks:
 aegismcp scan configs/ --cross-server --sarif cross.sarif
 ```
 
-### 📦 SARIF Export & CI/CD
+### SARIF Export & CI/CD
 All scan commands support SARIF 2.1.0 output:
 
 ```bash
@@ -200,7 +191,7 @@ aegismcp verify --live --command "python server.py" -l lock.json --sarif verify.
 
 Use `--fail-on LEVEL` (LOW, MEDIUM, HIGH, CRITICAL) to gate CI pipelines.
 
-### 📊 HTML Executive Reports
+### HTML Executive Reports
 **New in v3.0.0** — Beautiful, interactive HTML reports with dark/light themes:
 
 ```bash
@@ -211,10 +202,10 @@ aegismcp inspect --command "python server.py" --html live-report.html
 
 Features: severity filters, searchable findings, collapsible details, print-optimized CSS, copy-to-clipboard SARIF/JSON.
 
-### 🔌 Extensible RuleRegistry
+### Extensible RuleRegistry
 Built-in rules + custom regex rules loaded from config. No code changes needed for new patterns.
 
-### 🪟 Windows Compatible
+### Windows Compatible
 All CLI output uses `[OK]`/`[FAIL]` markers (no Unicode symbols), colored output works in modern terminals.
 
 ---
@@ -222,12 +213,15 @@ All CLI output uses `[OK]`/`[FAIL]` markers (no Unicode symbols), colored output
 ## Quick Start
 
 ```bash
-# Install from GitHub
-pip install git+https://github.com/cyberlynxxx/aegismcp.git
+# Install from PyPI
+pip install aegismcp-security
+
+# Install from GitHub (for bleeding edge)
+pip install git+https://github.com/cyberlynxxx/aegismcp-security.git
 
 # Or from source (editable)
-git clone https://github.com/cyberlynxxx/aegismcp
-cd aegismcp
+git clone https://github.com/cyberlynxxx/aegismcp-security
+cd aegismcp-security
 pip install -e .
 
 # With dev dependencies (for testing)
@@ -296,6 +290,41 @@ aegismcp ast-scan path/to/server.py --include-tests --fail-on HIGH
 
 ---
 
+## GitHub Action
+
+Use AegisMCP Security Scanner in your GitHub Actions workflows:
+
+```yaml
+# .github/workflows/security-scan.yml
+name: Security Scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run AegisMCP Scan
+        uses: cyberlynxxx/aegismcp@v3.1.1
+        with:
+          target: .
+          format: sarif
+          fail-on: HIGH
+
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: aegismcp-results.sarif
+          category: aegismcp
+```
+
+---
+
 ## CLI Reference
 
 ```bash
@@ -310,6 +339,7 @@ aegismcp [--config CONFIG] [--no-color] <COMMAND>
 | `lock` | Create lockfile from MCP config or live server |
 | `verify` | Verify MCP config or live server against lockfile |
 | `ast-scan` | Scan Python MCP server source code for vulnerabilities |
+| `--version` | Show version number |
 
 ### `scan`
 ```bash
@@ -342,7 +372,7 @@ aegismcp inspect [--command CMD] [--url URL] [--config-file FILE] [--sarif FILE]
 | `--fail-on LEVEL` | Exit with error if findings ≥ LEVEL |
 | `--timeout SEC` | Connection timeout (default: 10s) |
 
-### `proxy` (v3.0.1)
+### `proxy` (v3.0.0)
 ```bash
 aegismcp proxy [--command CMD] [--url URL] [--port PORT] [--policy FILE] [--audit-log FILE] [--fail-closed] [--rate-limit RPS]
 ```

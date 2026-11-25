@@ -16,7 +16,7 @@ from .rules_core import Finding
 from .sarif import export_sarif
 from .scanner import scan_directory, scan_file
 
-__version__ = "3.1.0"
+__version__ = "3.1.1"
 __all__ = [
     "ASTFinding",
     "Config",

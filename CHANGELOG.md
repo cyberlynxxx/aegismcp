@@ -5,18 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.1.0] - 2026-11-25
+## [3.1.1] - 2026-11-25
 
 ### Added
-- **Type Safety & Code Quality**: All mypy type errors resolved (24 fixes across 4 files)
-- **Distribution Ready**: PyPI Trusted Publishing workflow (release.yml), reusable GitHub Action (action.yml), pre-commit hooks (.pre-commit-hooks.yaml)
-- **Documentation Overhaul**: README.md completely rewritten with feature matrix table, quick-start examples, honest benchmarks, and architectural diagrams
-- **CI Hardening**: Fixed pytest asyncio fixture loop scope error (pyproject.toml)
+- **Version Command Support**: Added `--version`/`-V` flag to CLI for package version reporting
+- **GitHub Action Example**: Added comprehensive GitHub Action example to README.md
+- **PyPI Package Name Consistency**: Updated all documentation to reference PyPI package name `aegismcp-security` consistently
 
 ### Changed
-- Version bump to 3.1.0 across all package files (pyproject.toml, src/aegismcp/__init__.py)
-- Cleaned CHANGELOG.md: removed duplicated v3.1.0/3.0.2 entries, fixed v3.0.1 section categorization
-- All linting passes: mypy (--ignore-missing-imports), ruff, pytest (87 tests pass)
+- Version bump to 3.1.1 across all package files (pyproject.toml, src/aegismcp/__init__.py)
+- Updated action.yml to use `aegismcp-security==3.1.1` for installation
+- Updated README.md to include PyPI badge and proper installation instructions
 
 ### Fixed
 - html_report.py: Finding.column attribute access guarded with hasattr() (line 888)

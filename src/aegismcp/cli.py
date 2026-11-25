@@ -6,6 +6,12 @@ import asyncio
 import sys
 from pathlib import Path
 
+try:
+    from importlib.metadata import version as get_version
+except ImportError:
+    # Fallback for Python < 3.8
+    from importlib_metadata import version as get_version  # type: ignore
+
 from .ast_scanner import scan_python_directory, scan_python_file
 from .config import Config
 from .discovery import discover_mcp_files
@@ -25,6 +31,14 @@ from .proxy import ProxyConfig, run_proxy
 from .reporter import ReportOptions, print_report
 from .sarif import export_sarif
 from .scanner import scan_file
+
+
+def get_package_version() -> str:
+    """Get the installed package version."""
+    try:
+        return get_version("aegismcp-security")
+    except Exception:  # noqa: BLE001
+        return "dev"
 
 COLORS = {
     "CRITICAL": "\033[91m",  # Red
@@ -412,11 +426,12 @@ def main() -> None:
         prog="aegismcp",
         description="Security scanner for MCP configs & AI agent tools.",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
     # Global options
+    parser.add_argument("--version", "-V", action="store_true", help="Show version and exit")
     parser.add_argument("--config", type=str, help="Path to aegismcp.yaml config file")
     parser.add_argument("--no-color", action="store_true", help="Disable colored output")
+
+    subparsers = parser.add_subparsers(dest="command", required=False)
 
     # --- scan command ---
     scan_parser = subparsers.add_parser("scan", help="Scan MCP config file(s) or directory")
@@ -489,6 +504,11 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # Handle --version flag
+    if args.version:
+        print(f"aegismcp {get_package_version()}")
+        sys.exit(0)
+
     # Route to command handler
     if args.command == "scan":
         sys.exit(cmd_scan(args))
@@ -502,6 +522,9 @@ def main() -> None:
         sys.exit(cmd_inspect(args))
     elif args.command == "proxy":
         sys.exit(cmd_proxy(args))
+    elif args.command is None:
+        parser.print_help()
+        sys.exit(2)
 
 
 if __name__ == "__main__":
