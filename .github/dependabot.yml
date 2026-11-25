@@ -1,0 +1,37 @@
+name: aegismcp-security
+
+version: 3.2.0
+
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "younessmoufleh"
+    assignees:
+      - "younessmoufleh"
+    labels:
+      - "dependencies"
+    milestone: "3.2"
+    ignore:
+      - "dependency-name: ruff"
+      - "dependency-name: mypy"
+      - "dependency-name: pytest"
+      - "dependency-name: pytest-cov"
+      - "dependency-name: pytest-asyncio"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "younessmoufleh"
+    assignees:
+      - "younessmoufleh"
+    labels:
+      - "dependencies"
+    milestone: "3.2"
+

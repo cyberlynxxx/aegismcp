@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-11-25
+
+### Added
+- **Enterprise Security Hardening Module (`src/aegismcp/security.py`)**:
+  - DoS/ReDoS protection: Safe JSON loading with depth and size limits (`safe_json_loads`, `safe_json_load`), file size validation, and regex pattern compilation wrapper (`compile_safe_pattern`).
+  - Centralized Secret Redaction: Comprehensive regex patterns for API keys (OpenAI, Anthropic, GitHub, AWS, Stripe, Slack), JWT tokens, database connection strings, and private keys.
+  - Terminal Injection Defense: Robust sanitization (`sanitize_terminal_text`) stripping ANSI escape sequences, OSC sequences, control characters, and invisible Unicode control characters to prevent CLI spoofing.
+  - Path Traversal Defense: Secure path validation (`is_safe_path`) preventing directory escape attacks.
+- **Supply-Chain & Ecosystem Security**:
+  - Added GitHub Dependabot configuration (`.github/dependabot.yml`) for automated weekly vulnerability updates across pip and GitHub Actions.
+  - Added `pip-audit` step to GitHub Actions workflow (`.github/workflows/ci.yml`) for vulnerability scanning of dependencies.
+  - Added `SECURITY.md` vulnerability reporting policy.
+
+### Changed
+- Version bump to 3.2.0 across all package files (`pyproject.toml`, `src/aegismcp/__init__.py`).
+
 ## [3.1.1] - 2026-11-25
 
 ### Added
