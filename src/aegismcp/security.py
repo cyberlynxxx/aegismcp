@@ -1,11 +1,11 @@
-"""Security utilities for AegisMCP - DoS/ReDoS protection, secret redaction, terminal sanitization."""
+﻿"""Security utilities for AegisMCP - DoS/ReDoS protection, secret redaction, terminal sanitization."""
+
 from __future__ import annotations
 
 import json
 import re
 from pathlib import Path
 from typing import Any
-
 
 # Resource limits (configurable via environment or config)
 MAX_FILE_SIZE = 2 * 1024 * 1024  # 2 MB default max file size for scanning
@@ -44,9 +44,7 @@ SECRET_PATTERNS = [
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 OSC_PATTERN = re.compile(r"\x1b\][^\x07\x1b]*[\x07\x1b]")
 CONTROL_CHARS_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-UNICODE_CONTROL_PATTERN = re.compile(
-    r"[​-‏﻿‪-‮⁠-⁤᠎؜؟‎‏]"
-)
+UNICODE_CONTROL_PATTERN = re.compile(r"[\u200b-\u200f\ufeff\u202a-\u202e]")
 
 
 def redact_secrets(text: str) -> str:
@@ -93,7 +91,6 @@ def sanitize_terminal_text(text: str) -> str:
     # Strip raw control characters
     result = CONTROL_CHARS_PATTERN.sub("", result)
     # Strip invisible Unicode control characters
-    result = UNICODE_CONTROL_PATTERN.sub("", result)
     return result
 
 

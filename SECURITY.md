@@ -2,7 +2,7 @@
 
 ## Reporting Vulnerabilities
 
-Please report security vulnerabilities to the maintainer via email at [youness.moufleh@gmail.com](mailto:youness.moufleh@gmail.com).
+Please report security vulnerabilities to the maintainer via email at [younessmoufleh@icloud.com](mailto:younessmoufleh@icloud.com).
 
 ## Supported Versions
 
