@@ -1,14 +1,16 @@
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
+
 
 @dataclass
 class Finding:
     rule_id: str
     severity: str  # CRITICAL, HIGH, MEDIUM, LOW
-    title: str
-    message: str
-    location: str
-    remediation: str
+    confidence: str = "MEDIUM"  # HIGH, MEDIUM, LOW
+    title: str = ""
+    message: str = ""
+    location: str = ""
+    remediation: str = ""
 
 DANGEROUS_COMMANDS = {"bash", "sh", "zsh", "cmd", "cmd.exe", "powershell", "pwsh"}
 

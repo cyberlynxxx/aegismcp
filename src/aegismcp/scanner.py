@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from .config import Config
-from .rules_core import Finding
 from .rules.registry import registry
+from .rules_core import Finding
 
 
 def scan_file(file_path: Path, config: Config | None = None) -> list[Finding]:
@@ -48,6 +48,10 @@ def scan_file(file_path: Path, config: Config | None = None) -> list[Finding]:
 
     # Run all enabled built-in rules
     for rule in registry.enabled_rules(config.rules):
+        # Skip rules without check_fn (e.g., AST rules that are handled separately)
+        if rule.check_fn is None:
+            continue
+
         # Get severity (config override or default)
         severity = config.get_rule_severity(rule.rule_id, rule.severity)
 
@@ -71,7 +75,7 @@ def _check_custom_rule(data: dict[str, Any], location: str, custom_rule: dict[st
     """Check a custom regex rule against the config data."""
     import re
 
-    findings = []
+    findings: list[Finding] = []
     rule_id = custom_rule.get("id", "CUSTOM")
     pattern_str = custom_rule.get("pattern", "")
     severity = custom_rule.get("severity", "MEDIUM")
@@ -146,7 +150,7 @@ def _check_custom_rule(data: dict[str, Any], location: str, custom_rule: dict[st
 
 def scan_directory(root: Path, config: Config | None = None) -> list[Finding]:
     """Scan all MCP config files in a directory."""
-    from .discovery import iter_json_files, _looks_like_mcp_config
+    from .discovery import _looks_like_mcp_config, iter_json_files
 
     if config is None:
         config = Config()

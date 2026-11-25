@@ -1,6 +1,4 @@
 """Tests for the scan command."""
-import pytest
-from pathlib import Path
 import json
 
 
@@ -9,7 +7,7 @@ class TestScanCommand:
 
     def test_scan_vulnerable_mcp(self, vulnerable_mcp_path):
         """Scan the vulnerable MCP config and verify all rules trigger."""
-        from aegismcp import scan_file, Config
+        from aegismcp import Config, scan_file
         config = Config()
         findings = scan_file(vulnerable_mcp_path, config)
 
@@ -31,7 +29,7 @@ class TestScanCommand:
 
     def test_scan_clean_config(self, clean_config, temp_dir):
         """Scan a clean config - should find no issues."""
-        from aegismcp import scan_file, Config
+        from aegismcp import Config, scan_file
 
         config_file = temp_dir / "clean_mcp.json"
         config_file.write_text(json.dumps(clean_config))
@@ -43,7 +41,7 @@ class TestScanCommand:
 
     def test_scan_with_sarif_export(self, vulnerable_mcp_path, temp_dir):
         """Test SARIF export functionality."""
-        from aegismcp import scan_file, Config, export_sarif
+        from aegismcp import Config, export_sarif, scan_file
 
         config = Config()
         findings = scan_file(vulnerable_mcp_path, config)
@@ -63,8 +61,7 @@ class TestScanCommand:
 
     def test_scan_fail_on_exit_code(self, vulnerable_mcp_path):
         """Test --fail-on behavior via exit codes."""
-        from aegismcp import scan_file, Config
-        from aegismcp.rules_core import Finding
+        from aegismcp import Config, scan_file
 
         config = Config()
         config.fail_on = "HIGH"
@@ -76,7 +73,7 @@ class TestScanCommand:
 
     def test_scan_disabled_rules(self, vulnerable_mcp_path):
         """Test that disabled rules in config are respected."""
-        from aegismcp import scan_file, Config
+        from aegismcp import Config, scan_file
 
         config = Config()
         config.rules = {"AMCP001": {"enabled": False}}
@@ -87,7 +84,7 @@ class TestScanCommand:
 
     def test_scan_custom_rule(self, vulnerable_mcp_path):
         """Test custom regex rules from config."""
-        from aegismcp import scan_file, Config
+        from aegismcp import Config, scan_file
 
         config = Config()
         config.custom_rules = [{
@@ -120,8 +117,9 @@ class TestScanCLI:
 
     def test_scan_without_target_with_auto(self, capsys):
         """Test that scan --auto works without target argument."""
-        from aegismcp.cli import main
         import sys
+
+        from aegismcp.cli import main
 
         # This should not crash with "target required" error
         # We can't easily test auto-discover without mocking, but we can
@@ -141,8 +139,9 @@ class TestScanCLI:
 
     def test_scan_without_target_no_auto_fails(self, capsys):
         """Test that scan without target and without --auto fails cleanly."""
-        from aegismcp.cli import main
         import sys
+
+        from aegismcp.cli import main
 
         old_argv = sys.argv
         try:

@@ -15,26 +15,33 @@ This module contains heavy stress tests for the new v3.0.1 features:
 
 import asyncio
 import json
-import subprocess
 import tempfile
 import time
 from io import StringIO
 from pathlib import Path
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch, MagicMock as SyncMagicMock
+from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock as SyncMagicMock
 
 import pytest
-from aegismcp.ast_scanner import scan_python_file, scan_python_directory, ASTFinding
+
+from aegismcp.ast_scanner import scan_python_file
 from aegismcp.cli import main
 from aegismcp.config import Config
 from aegismcp.cross_server import CrossServerChecker, CrossServerConfig
-from aegismcp.html_report import save_html_report, HTMLReportOptions
-from aegismcp.inspector import MCPInspector, InspectorOptions, MCPServerInfo, MCPTool, inspect_live
+from aegismcp.html_report import HTMLReportOptions, save_html_report
+from aegismcp.inspector import (
+    InspectorOptions,
+    MCPInspector,
+    MCPServerInfo,
+    MCPTool,
+)
 from aegismcp.lockfile import Lockfile, ServerLock, ToolDefinition, compute_tool_hash
 from aegismcp.proxy import MCPProxy, ProxyConfig
-from aegismcp.reporter import print_report, ReportOptions, print_summary_box, calculate_security_score
+from aegismcp.reporter import (
+    ReportOptions,
+    print_report,
+)
 from aegismcp.rules_core import Finding as CoreFinding
-
 
 # ============================================================================
 # MOCK MCP SERVER
@@ -131,7 +138,8 @@ async def main():
 
 asyncio.run(main())
 '''
-        with open(self.server_script, 'w') as f:
+        # Write server script synchronously (test setup, not hot path)
+        with open(self.server_script, 'w') as f:  # noqa: ASYNC230
             f.write(server_code)
 
         # Use sys.executable to ensure we use the same Python
@@ -147,7 +155,7 @@ asyncio.run(main())
         await asyncio.sleep(0.5)
         # Read and discard the initial capabilities broadcast
         try:
-            broadcast = await asyncio.wait_for(self.process.stdout.readline(), timeout=2.0)
+            await asyncio.wait_for(self.process.stdout.readline(), timeout=2.0)
             # print(f"Initial broadcast: {broadcast.decode().strip()}")
         except asyncio.TimeoutError:
             pass
@@ -205,8 +213,8 @@ EVASION_PAYLOADS = {
     "unicode_bypass": [
         "Ｓｙｓｔｅｍ（＇ｒｍ －ｒｆ ／＇）",
         "𝓢𝔂𝓼𝓽𝓮𝓶('𝓻𝓶 -𝓻𝓯 /')",
-        "‮{{system('id')}}‭",
-        "system​('id')",
+        "\u202e{{system('id')}}\u202d",
+        "system\u200b('id')",
         "s̵y̵s̵t̵e̵m",
     ],
     "schema_bypass": [
@@ -412,7 +420,7 @@ class TestFaultInjection:
         with patch('asyncio.create_subprocess_exec', return_value=mock_process):
             try:
                 await inspector.connect_stdio(["fake"])
-            except Exception:
+            except (OSError, asyncio.TimeoutError, RuntimeError):
                 pass  # Expected to fail gracefully
 
         # Inspector should handle gracefully
@@ -424,25 +432,35 @@ class TestFaultInjection:
         options = InspectorOptions(timeout=5.0, fail_on="HIGH")
         inspector = MCPInspector(options)
 
-        async def readline_gen():
-            yield b"not valid json\n"
-            yield b'{"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "capabilities": {}, "serverInfo": {"name": "test", "version": "1.0"}}}\n'
-            yield b""
+        # Simulate a list of pre-generated async results
+        read_results = [
+            b"not valid json\n",
+            b'{"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "capabilities": {}, "serverInfo": {"name": "test", "version": "1.0"}}}\n',
+            b"",
+        ]
+        read_idx = [0]  # Use list to allow mutation in closure
 
-        gen = readline_gen()
+        async def get_readline():
+            idx = read_idx[0]
+            if idx < len(read_results):
+                result = read_results[idx]
+                read_idx[0] += 1
+                return result
+            raise StopAsyncIteration
+
         mock_process = SyncMagicMock()
         mock_process.stdin = SyncMagicMock()
         mock_process.stdin.write = SyncMagicMock()
         mock_process.stdin.drain = AsyncMock()
         mock_process.stdout = SyncMagicMock()
-        mock_process.stdout.readline = AsyncMock(side_effect=lambda: next(gen))
+        mock_process.stdout.readline = get_readline
         mock_process.wait = AsyncMock()
         mock_process.terminate = AsyncMock()
 
         with patch('asyncio.create_subprocess_exec', return_value=mock_process):
             try:
                 await inspector.connect_stdio(["fake"])
-            except Exception:
+            except (OSError, asyncio.TimeoutError, RuntimeError):
                 pass
 
         assert True
@@ -453,24 +471,34 @@ class TestFaultInjection:
         options = InspectorOptions(timeout=5.0, fail_on="HIGH")
         inspector = MCPInspector(options)
 
-        async def readline_gen():
-            yield b'{"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "capabilities": {}, "serverInfo": {"name": "test", "version": "1.0"}}}\n'
-            yield b""
+        # Simulate a list of pre-generated async results
+        read_results = [
+            b'{"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "capabilities": {}, "serverInfo": {"name": "test", "version": "1.0"}}}\n',
+            b"",
+        ]
+        read_idx = [0]  # Use list to allow mutation in closure
 
-        gen = readline_gen()
+        async def get_readline():
+            idx = read_idx[0]
+            if idx < len(read_results):
+                result = read_results[idx]
+                read_idx[0] += 1
+                return result
+            raise StopAsyncIteration
+
         mock_process = SyncMagicMock()
         mock_process.stdin = SyncMagicMock()
         mock_process.stdin.write = SyncMagicMock()
         mock_process.stdin.drain = AsyncMock()
         mock_process.stdout = SyncMagicMock()
-        mock_process.stdout.readline = AsyncMock(side_effect=lambda: next(gen))
+        mock_process.stdout.readline = get_readline
         mock_process.wait = AsyncMock()
         mock_process.terminate = AsyncMock()
 
         with patch('asyncio.create_subprocess_exec', return_value=mock_process):
             try:
                 await inspector.connect_stdio(["fake"])
-            except Exception:
+            except (OSError, asyncio.TimeoutError, RuntimeError):
                 pass
 
         assert True
@@ -605,7 +633,6 @@ class TestScale:
 
     def test_cross_server_1000_tools(self):
         """Test cross-server checker handles 1000+ tools efficiently."""
-        import time
 
         servers = []
         for i in range(10):
@@ -897,7 +924,7 @@ class TestProxyE2E:
 
             for i in range(3):
                 request = {"jsonrpc": "2.0", "id": i, "method": "tools/list"}
-                response = await proxy._scan_request(request)
+                await proxy._scan_request(request)
 
 
 # ============================================================================

@@ -4,40 +4,39 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
-import signal
-import sys
 import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import httpx
 except ImportError:
-    httpx = None
+    httpx = None  # type: ignore[assignment]
 
-from .inspector import JSONRPCClient, MCPInspector, InspectorOptions
-from .rules_core import (
-    Finding,
-    SECRET_PATTERNS,
-    PROMPT_INJECTION_PATTERNS,
-    RESPONSE_INJECTION_PATTERNS,
-    RESPONSE_SECRET_PATTERNS,
-    RESPONSE_INVISIBLE_UNICODE_PATTERNS,
-)
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None  # type: ignore[assignment]
+
+from .inspector import InspectorOptions, MCPInspector
 from .normalizer import Normalizer, is_suspicious_ip
+from .rules_core import (
+    RESPONSE_INJECTION_PATTERNS,
+    RESPONSE_INVISIBLE_UNICODE_PATTERNS,
+    RESPONSE_SECRET_PATTERNS,
+    Finding,
+)
 from .scoring import PromptInjectionScorer, ScoringMode, create_scorer_from_config
-from .reporter import print_report, ReportOptions
 
 
 @dataclass
 class ProxyConfig:
     """Configuration for the MCP proxy."""
     # Server to proxy to
-    command: Optional[list[str]] = None
-    url: Optional[str] = None
+    command: list[str] | None = None
+    url: str | None = None
 
     # Proxy binding
     bind_host: str = "127.0.0.1"
@@ -58,7 +57,7 @@ class ProxyConfig:
     normalizer_max_iterations: int = 5
 
     # Audit logging
-    audit_log: Optional[Path] = None
+    audit_log: Path | None = None
     audit_format: str = "jsonl"  # jsonl or text
 
     # Rate limiting
@@ -83,7 +82,7 @@ class AuditEntry:
     client_ip: str
     allowed: bool
     findings: list[Finding] = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
     def to_json(self) -> str:
         return json.dumps({
@@ -119,7 +118,7 @@ class RateLimiter:
 
     def __init__(self, rate_per_second: int):
         self.rate = rate_per_second
-        self.tokens = rate_per_second
+        self.tokens: float = float(rate_per_second)
         self.last_update = time.monotonic()
         self._lock = asyncio.Lock()
 
@@ -143,7 +142,7 @@ class MCPProxy:
     def __init__(self, config: ProxyConfig):
         self.config = config
         self.rate_limiter = RateLimiter(config.max_requests_per_second)
-        self.inspector: Optional[MCPInspector] = None
+        self.inspector: MCPInspector | None = None
         self.server_info = None
         self.request_count = 0
         self.blocked_count = 0
@@ -234,7 +233,7 @@ class MCPProxy:
             body = await request.read()
             if len(body) > self.config.max_request_size:
                 return web.Response(status=413, text="Request too large")
-        except Exception:
+        except (OSError, asyncio.TimeoutError):
             return web.Response(status=400, text="Invalid request body")
 
         # Parse JSON-RPC
@@ -307,7 +306,7 @@ class MCPProxy:
                 content_type="application/json",
                 text=json.dumps(response)
             )
-        except Exception as e:
+        except (OSError, asyncio.TimeoutError, aiohttp.ClientError) as e:
             self.logger.error(f"Upstream error: {e}")
             await self._audit_request(AuditEntry(
                 timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -328,10 +327,21 @@ class MCPProxy:
                 })
             )
 
-    async def _scan_request(self, request: dict) -> tuple[bool, list[Finding]]:
-        """Scan an incoming request for threats."""
+    async def _scan_request(self, request: dict | list) -> tuple[bool, list[Finding]]:
+        """Scan an incoming request for threats. Handles both single requests and JSON-RPC batches."""
         if not self.inspector or not self.server_info:
             return True, []
+
+        # Handle JSON-RPC batch (array of requests)
+        if isinstance(request, list):
+            all_findings = []
+            for req in request:
+                if isinstance(req, dict):
+                    allowed, findings = await self._scan_request(req)
+                    all_findings.extend(findings)
+                    if not allowed:
+                        return False, all_findings
+            return True, all_findings
 
         findings = []
         method = request.get("method", "")
@@ -391,6 +401,13 @@ class MCPProxy:
                     inj_findings = self._check_prompt_injection(value, f"prompts.{prompt_name}.arguments.{key}")
                     findings.extend(inj_findings)
 
+        # Handle notifications (no id) - just scan if they have relevant methods
+        elif request.get("id") is None and method == "notifications/initialized" and params:
+                for key, value in normalized_params.items():
+                    if isinstance(value, str):
+                        inj_findings = self._check_prompt_injection(value, f"notifications.{method}.{key}")
+                        findings.extend(inj_findings)
+
         # Determine if request should be blocked
         blocked = self._should_block(findings)
         return not blocked, findings
@@ -398,7 +415,7 @@ class MCPProxy:
     def _validate_tool_arguments(self, tool: Any, arguments: dict) -> list[Finding]:
         """Validate tool arguments against input schema."""
         from .rules_core import Finding
-        findings = []
+        findings: list[Finding] = []
         schema = tool.input_schema
         if not isinstance(schema, dict):
             return findings
@@ -454,8 +471,7 @@ class MCPProxy:
                 ))
 
             # Check enum constraints
-            if "enum" in prop_schema:
-                if arg_value not in prop_schema["enum"]:
+            if "enum" in prop_schema and arg_value not in prop_schema["enum"]:
                     findings.append(Finding(
                         rule_id="AMCP304",
                         severity="HIGH",
@@ -479,8 +495,7 @@ class MCPProxy:
                     ))
 
             # Check maxLength
-            if "maxLength" in prop_schema and isinstance(arg_value, str):
-                if len(arg_value) > prop_schema["maxLength"]:
+            if "maxLength" in prop_schema and isinstance(arg_value, str) and len(arg_value) > prop_schema["maxLength"]:
                     findings.append(Finding(
                         rule_id="AMCP306",
                         severity="MEDIUM",
@@ -495,6 +510,7 @@ class MCPProxy:
     def _check_prompt_injection(self, text: str, location: str) -> list[Finding]:
         """Check text for prompt injection patterns using weighted scorer."""
         import re
+
         from .rules_core import Finding
         findings = []
 
@@ -543,8 +559,8 @@ class MCPProxy:
             (r"wget\s+.*\|\s*(bash|sh)", "Pipe to Shell"),
         ]
 
-        for pattern, name in dangerous_cmd_patterns:
-            if re.search(pattern, text, re.IGNORECASE):
+        for regex_pattern, name in dangerous_cmd_patterns:
+            if re.search(regex_pattern, text, re.IGNORECASE):
                 findings.append(Finding(
                     rule_id="AMCP301",
                     severity="CRITICAL",
@@ -556,13 +572,13 @@ class MCPProxy:
 
         # Check for invisible Unicode using normalizer's patterns
         invisible_patterns = [
-            ("Zero-Width Characters", re.compile(r"[​-‏﻿]")),
-            ("Bidi Override Characters", re.compile(r"[‪-‮⁦-⁩]")),
-            ("Invisible Separators", re.compile(r"[⁠-⁤]")),
-            ("Format Characters", re.compile(r"[᠎]")),
+            ("Zero-Width Characters", re.compile(r"[\u200b-\u200f\ufeff]")),
+            ("Bidi Override Characters", re.compile(r"[\u202a-\u202e\u2066-\u2069]")),
+            ("Invisible Separators", re.compile(r"[\u2060-\u2064]")),
+            ("Format Characters", re.compile(r"[\u180e]")),
         ]
-        for pattern_name, pattern in invisible_patterns:
-            if pattern.search(text):
+        for pattern_name, unicode_pattern in invisible_patterns:
+            if unicode_pattern.search(text):
                 findings.append(Finding(
                     rule_id="AMCP007",
                     severity="CRITICAL",
@@ -605,10 +621,7 @@ class MCPProxy:
 
     def _scan_response(self, method: str, response: dict) -> list[Finding]:
         """Scan response for AMCP309 threats: indirect prompt injection, secret leakage, invisible Unicode."""
-        from .rules_core import (
-            Finding, RESPONSE_INJECTION_PATTERNS,
-            RESPONSE_SECRET_PATTERNS, RESPONSE_INVISIBLE_UNICODE_PATTERNS
-        )
+        from .rules_core import Finding
 
         if not self.config.response_scanning_enabled:
             return []
@@ -746,7 +759,7 @@ class MCPProxy:
             # Append to file
             with self.config.audit_log.open("a", encoding="utf-8") as f:
                 f.write(line + "\n")
-        except Exception as e:
+        except OSError as e:
             self.logger.error(f"Audit log write failed: {e}")
 
     async def _health_check(self, request):

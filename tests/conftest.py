@@ -1,26 +1,14 @@
 """Pytest configuration and fixtures for AegisMCP tests."""
-import pytest
-from pathlib import Path
-import tempfile
-import json
-import os
 
 # Add src to path
 import sys
+import tempfile
+from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from aegismcp import (
-    scan_file,
-    scan_directory,
-    discover_mcp_files,
-    Config,
-    Lockfile,
-    create_lock_from_config,
-    verify_lockfile,
-    scan_python_file,
-    scan_python_directory,
-    export_sarif,
-)
 
 
 @pytest.fixture
@@ -43,7 +31,9 @@ def clean_config():
             "safe-server": {
                 "command": "python",
                 "args": ["server.py"],
-                "env": {}
+                "env": {
+                    "RATE_LIMIT": "100/minute"
+                }
             }
         }
     }

@@ -1,7 +1,6 @@
 """Configuration loading for aegismcp.yaml"""
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -102,7 +101,7 @@ class Config:
     def get_rule_severity(self, rule_id: str, default_severity: str) -> str:
         """Get severity for a rule (config override or default)."""
         if rule_id in self.rules and self.rules[rule_id].severity:
-            return self.rules[rule_id].severity
+            return self.rules[rule_id].severity or default_severity
         return default_severity
 
     def should_ignore(self, path: Path) -> bool:

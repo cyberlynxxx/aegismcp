@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aegismcp"
-version = "3.0.1"
-description = "Active MCP Security Engine & Runtime Firewall — live introspection, runtime proxy, cross-server rules, executive reporting."
+version = "3.1.0"
+description = "Active MCP Security Engine & Runtime Firewall — live introspection, runtime proxy, cross-server rules, executive reporting, Python/JS taint tracking."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -14,16 +14,20 @@ dependencies = [
     "httpx>=0.27",
     "aiohttp>=3.9",
 ]
-keywords = ["mcp", "security", "model-context-protocol", "sarif", "static-analysis", "ai-security", "runtime-protection", "proxy"]
+keywords = ["mcp", "security", "model-context-protocol", "sarif", "static-analysis", "ai-security", "runtime-protection", "proxy", "taint-tracking", "codeql"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Security",
     "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
 ]
 
 [project.urls]
@@ -46,3 +50,4 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"

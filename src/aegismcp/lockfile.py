@@ -3,12 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
 
 LOCKFILE_NAME = "aegismcp.lock.json"
 
@@ -28,10 +26,10 @@ class ServerLock:
     """Lock data for a single MCP server."""
     name: str
     command: str | None = None
-    args: list[str] = None
-    env: dict[str, str] = None
+    args: list[str] | None = None
+    env: dict[str, str] | None = None
     url: str | None = None
-    tools: list[ToolDefinition] = None
+    tools: list[ToolDefinition] = field(default_factory=list)
     # Hash of the entire server config (for cross-server shadowing detection)
     config_hash: str = ""
 
@@ -40,8 +38,6 @@ class ServerLock:
             self.args = []
         if self.env is None:
             self.env = {}
-        if self.tools is None:
-            self.tools = []
 
 
 @dataclass
@@ -50,14 +46,7 @@ class Lockfile:
     version: int = 1
     created_at: str = ""
     updated_at: str = ""
-    servers: dict[str, ServerLock] = None
-
-    def __post_init__(self):
-        if self.servers is None:
-            self.servers = {}
-        if not self.created_at:
-            self.created_at = datetime.now(timezone.utc).isoformat()
-        self.updated_at = datetime.now(timezone.utc).isoformat()
+    servers: dict[str, ServerLock] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path | None = None) -> Lockfile:
@@ -101,7 +90,7 @@ class Lockfile:
 
         self.updated_at = datetime.now(timezone.utc).isoformat()
 
-        data = {
+        data: dict[str, Any] = {
             "version": self.version,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -260,7 +249,7 @@ def update_lockfile_with_tools(lockfile: Lockfile, server_name: str, tools: list
 
 def verify_tools(lockfile: Lockfile, server_name: str, current_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Verify tool definitions against lockfile."""
-    violations = []
+    violations: list[dict[str, Any]] = []
 
     if server_name not in lockfile.servers:
         return violations

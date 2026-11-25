@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+
 from .rules_core import Finding
 
 SEVERITY_MAP = {

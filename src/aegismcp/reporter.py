@@ -1,14 +1,9 @@
-"""Clean, scannable CLI reporter for AegisMCP v3.0.1."""
+"""Clean, scannable CLI reporter for AegisMCP v3.0.2."""
 from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
-
-from .rules_core import Finding
-from .ast_scanner import ASTFinding
-
 
 # Color codes (Windows PowerShell-safe, no emojis)
 COLORS = {
@@ -27,6 +22,12 @@ SEVERITY_BADGE = {
     "HIGH":     "[HIGH]",
     "MEDIUM":   "[MED] ",
     "LOW":      "[LOW] ",
+}
+
+CONFIDENCE_BADGE = {
+    "HIGH": "[CONF:H]",
+    "MEDIUM": "[CONF:M]",
+    "LOW": "[CONF:L]",
 }
 
 
@@ -78,21 +79,24 @@ def _group_findings_by_target(findings: list) -> dict[str, list]:
 def _format_finding_compact(finding: Any, show_color: bool) -> str:
     """Format a finding in compact single-line table view."""
     severity = getattr(finding, "severity", "MEDIUM")
+    confidence = getattr(finding, "confidence", "MEDIUM")
     rule_id = getattr(finding, "rule_id", "UNKNOWN")
     title = getattr(finding, "title", "Unknown Issue")
     location = getattr(finding, "location", "Unknown Location")
 
     badge = SEVERITY_BADGE.get(severity, "[?]")
+    conf_badge = CONFIDENCE_BADGE.get(confidence, "")
     colored_badge = _colorize(badge, severity, show_color)
 
-    # Format: [CRIT] AMCP005  Tool Poisoning          (server: helper_tool)
+    # Format: [CRIT] [CONF:H] AMCP005  Tool Poisoning          (server: helper_tool)
     loc_display = _truncate(location, 35)
-    return f"{colored_badge} {rule_id:<7} {_truncate(title, 28):<28} ({loc_display})"
+    return f"{colored_badge} {conf_badge} {rule_id:<7} {_truncate(title, 28):<28} ({loc_display})"
 
 
 def _format_finding_default(finding: Any, show_color: bool) -> list[str]:
     """Format a finding in default 3-line aligned block."""
     severity = getattr(finding, "severity", "MEDIUM")
+    confidence = getattr(finding, "confidence", "MEDIUM")
     rule_id = getattr(finding, "rule_id", "UNKNOWN")
     title = getattr(finding, "title", "Unknown Issue")
     location = getattr(finding, "location", "Unknown Location")
@@ -100,13 +104,14 @@ def _format_finding_default(finding: Any, show_color: bool) -> list[str]:
     remediation = getattr(finding, "remediation", "")
 
     badge = SEVERITY_BADGE.get(severity, "[?]")
+    conf_badge = CONFIDENCE_BADGE.get(confidence, "")
     colored_badge = _colorize(badge, severity, show_color)
 
     lines = []
 
-    # Line 1: [CRIT] AMCP005  Tool Poisoning          (server: helper_tool)
+    # Line 1: [CRIT] [CONF:H] AMCP005  Tool Poisoning          (server: helper_tool)
     loc_display = _truncate(location, 50)
-    lines.append(f"{colored_badge} {rule_id:<7} {_truncate(title, 28):<28} ({loc_display})")
+    lines.append(f"{colored_badge} {conf_badge} {rule_id:<7} {_truncate(title, 28):<28} ({loc_display})")
 
     # Line 2: Why: one concise sentence
     why = _truncate(message, 80) if message else "No details available"
@@ -161,11 +166,11 @@ def print_report(
     # Print findings
     if options.compact:
         # Compact table header
-        header = f"{'SEV':<6} {'RULE':<7} {'TITLE':<28} {'LOCATION'}"
+        header = f"{'SEV':<6} {'CONF':<8} {'RULE':<7} {'TITLE':<28} {'LOCATION'}"
         if show_color:
             header = _colorize(header, "LOW", show_color)
         print(header, file=output)
-        print("-" * 80, file=output)
+        print("-" * 90, file=output)
 
         for target in sorted(grouped.keys()):
             for finding in grouped[target]:

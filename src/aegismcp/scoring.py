@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
 
 
 class ScoringMode(str, Enum):
@@ -129,13 +128,13 @@ BALANCED_PATTERNS = [
     ),
     InjectionPattern(
         name="Unicode Obfuscation - Bidi",
-        pattern=re.compile(r"[‪-‮⁦-⁩]"),  # Bidi override
+        pattern=re.compile(r"[\u202a-\u202e\u2066-\u2069]"),  # Bidi override
         weight=0.5,
         category="obfuscation"
     ),
     InjectionPattern(
         name="Unicode Obfuscation - Zero Width",
-        pattern=re.compile(r"[​-‏﻿]"),  # Zero-width
+        pattern=re.compile(r"[\u200b-\u200f\ufeff]"),  # Zero-width
         weight=0.5,
         category="obfuscation"
     ),
@@ -238,7 +237,7 @@ MAX_STRICT_SCORE = sum(p.weight for p in STRICT_PATTERNS)
 class PromptInjectionScorer:
     """Weighted prompt injection detection with configurable modes."""
 
-    def __init__(self, mode: ScoringMode = ScoringMode.BALANCED, custom_patterns: list[InjectionPattern] = None):
+    def __init__(self, mode: ScoringMode = ScoringMode.BALANCED, custom_patterns: list[InjectionPattern] | None = None):
         self.mode = mode
         self.patterns = (STRICT_PATTERNS if mode == ScoringMode.STRICT else BALANCED_PATTERNS)
         if custom_patterns:

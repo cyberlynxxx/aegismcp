@@ -5,24 +5,26 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import Optional
 
+from .ast_scanner import scan_python_directory, scan_python_file
 from .config import Config
-from .scanner import scan_file, scan_directory
-from .sarif import export_sarif
 from .discovery import discover_mcp_files
+from .html_report import HTMLReportOptions, save_html_report
+from .inspector import (
+    InspectorOptions,
+    create_lock_from_live,
+    inspect_live,
+    verify_live,
+)
 from .lockfile import (
     Lockfile,
     create_lock_from_config,
     verify_lockfile,
 )
-from .ast_scanner import scan_python_file, scan_python_directory, ASTFinding
-from .rules_core import Finding
-from .inspector import inspect_live, create_lock_from_live, verify_live, InspectorOptions
-from .proxy import run_proxy, ProxyConfig, main as proxy_main
-from .html_report import save_html_report, HTMLReportOptions
-from .reporter import print_report, ReportOptions
-
+from .proxy import ProxyConfig, run_proxy
+from .reporter import ReportOptions, print_report
+from .sarif import export_sarif
+from .scanner import scan_file
 
 COLORS = {
     "CRITICAL": "\033[91m",  # Red
@@ -99,7 +101,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
             files_scanned = 1
         else:
             # For directory, count files scanned
-            from .discovery import iter_json_files, _looks_like_mcp_config
+            from .discovery import _looks_like_mcp_config, iter_json_files
             for json_file in iter_json_files(target):
                 if config.should_ignore(json_file):
                     continue
@@ -129,7 +131,7 @@ def cmd_lock(args: argparse.Namespace) -> int:
             config_file=Path(args.config_file) if args.config_file else None,
         )
 
-        findings, server_info = asyncio.run(inspect_live(options))
+        _findings, server_info = asyncio.run(inspect_live(options))
 
         if not server_info:
             print("Error: Could not connect to server")
@@ -176,7 +178,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
             config_file=Path(args.config_file) if args.config_file else None,
         )
 
-        findings, server_info = asyncio.run(inspect_live(options))
+        _findings, server_info = asyncio.run(inspect_live(options))
 
         if not server_info:
             print("Error: Could not connect to server")
@@ -255,15 +257,14 @@ def cmd_ast_scan(args: argparse.Namespace) -> int:
     else:
         findings = scan_python_directory(target, include_tests=args.include_tests)
         # Count Python files scanned
-        from .ast_scanner import _is_test_file, _is_in_test_dir
+        from .ast_scanner import _is_in_test_dir, _is_test_file
         ignore_dirs = {".git", "__pycache__", ".venv", "venv", "env", "dist", "build", ".pytest_cache", ".mypy_cache", "node_modules"}
         file_count = 0
         for py_file in target.rglob("*.py"):
             if any(part in ignore_dirs for part in py_file.parts):
                 continue
-            if not args.include_tests:
-                if _is_test_file(py_file) or _is_in_test_dir(py_file):
-                    continue
+            if not args.include_tests and (_is_test_file(py_file) or _is_in_test_dir(py_file)):
+                continue
             file_count += 1
 
     # Use new reporter for AST findings
@@ -314,7 +315,7 @@ def cmd_inspect(args: argparse.Namespace) -> int:
 
     try:
         findings, server_info = asyncio.run(inspect_live(options))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Error: {e}")
         return 1
 
@@ -399,7 +400,7 @@ def cmd_proxy(args: argparse.Namespace) -> int:
         asyncio.run(run_proxy(config))
     except KeyboardInterrupt:
         pass
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Error: {e}")
         return 1
 

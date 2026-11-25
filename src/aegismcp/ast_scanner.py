@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import ast
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 
 @dataclass
@@ -13,6 +11,7 @@ class ASTFinding:
     """A security finding from AST analysis."""
     rule_id: str
     severity: str
+    confidence: str  # HIGH, MEDIUM, LOW
     title: str
     message: str
     file_path: Path
@@ -32,18 +31,91 @@ class PythonASTVisitor(ast.NodeVisitor):
     def __init__(self, file_path: Path):
         self.file_path = file_path
         self.findings: list[ASTFinding] = []
+        # Taint tracking state: scope-aware variable -> taint source
+        self._taint_scope: list[dict[str, str]] = [{}]
+        # Current function parameters (taint sources)
+        self._current_params: set[str] = set()
 
-    def _add_finding(self, rule_id: str, severity: str, title: str, message: str,
+    def _push_scope(self) -> None:
+        self._taint_scope.append({})
+
+    def _pop_scope(self) -> None:
+        if len(self._taint_scope) > 1:
+            self._taint_scope.pop()
+
+    def _current_taint(self) -> dict[str, str]:
+        return self._taint_scope[-1]
+
+    def _is_tainted(self, node: ast.AST) -> bool:
+        """Check if an AST node is tainted (user-controlled)."""
+        if isinstance(node, ast.Name):
+            # Check if variable is in any scope
+            for scope in reversed(self._taint_scope):
+                if node.id in scope:
+                    return True
+            # Function params are taint sources
+            return node.id in self._current_params
+        if isinstance(node, ast.JoinedStr):  # f-string
+            return any(self._is_tainted(v) for v in node.values)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):  # concat
+            return self._is_tainted(node.left) or self._is_tainted(node.right)
+        if isinstance(node, ast.Subscript):  # indexing
+            return self._is_tainted(node.value) or self._is_tainted(node.slice)
+        if isinstance(node, ast.Call):
+            # Function call result - conservative: tainted if any arg tainted
+            return any(self._is_tainted(a) for a in node.args) or any(
+                self._is_tainted(kw.value) for kw in node.keywords
+            )
+        if isinstance(node, ast.Attribute):
+            return self._is_tainted(node.value)
+        return False
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._push_scope()
+        # Function parameters are taint sources
+        old_params = self._current_params
+        self._current_params = set()
+        for arg in node.args.args:
+            self._current_params.add(arg.arg)
+        # Defaults are not tainted
+        self.generic_visit(node)
+        self._current_params = old_params
+        self._pop_scope()
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self.visit_FunctionDef(node)  # type: ignore
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        # Propagate taint through assignments
+        tainted = self._is_tainted(node.value)
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                if tainted:
+                    self._current_taint()[target.id] = "tainted"
+                else:
+                    # Remove taint if reassigned to safe value
+                    self._current_taint().pop(target.id, None)
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        if isinstance(node.target, ast.Name) and (
+            self._is_tainted(node.value) or node.target.id in self._current_taint()
+        ):
+            self._current_taint()[node.target.id] = "tainted"
+        self.generic_visit(node)
+
+    def _add_finding(self, rule_id: str, severity: str, confidence: str, title: str, message: str,
                      node: ast.AST, remediation: str) -> None:
         """Add a finding with location info."""
         self.findings.append(ASTFinding(
             rule_id=rule_id,
             severity=severity,
+            confidence=confidence,
             title=title,
             message=message,
             file_path=self.file_path,
-            line=node.lineno,
-            column=node.col_offset,
+            line=getattr(node, 'lineno', 0),
+            column=getattr(node, 'col_offset', 0),
             remediation=remediation,
         ))
 
@@ -71,10 +143,9 @@ class PythonASTVisitor(ast.NodeVisitor):
                 if isinstance(node.func.value, ast.Name) and node.func.value.id == "subprocess":
                     self._check_subprocess_call(node)
             # os.system, os.popen
-            elif node.func.attr in ("system", "popen"):
-                if isinstance(node.func.value, ast.Name) and node.func.value.id == "os":
-                    self._add_finding(
-                        "AMCP101", "CRITICAL",
+            elif node.func.attr in ("system", "popen") and isinstance(node.func.value, ast.Name) and node.func.value.id == "os":
+                self._add_finding(
+                        "AMCP101", "CRITICAL", "HIGH",
                         "Direct shell execution via os.system/popen",
                         f"Use of os.{node.func.attr}() detected - allows arbitrary command execution",
                         node,
@@ -82,10 +153,9 @@ class PythonASTVisitor(ast.NodeVisitor):
                     )
 
         # eval, exec
-        elif isinstance(node.func, ast.Name):
-            if node.func.id in ("eval", "exec"):
+        elif isinstance(node.func, ast.Name) and node.func.id in ("eval", "exec"):
                 self._add_finding(
-                    "AMCP102", "CRITICAL",
+                    "AMCP102", "CRITICAL", "HIGH",
                     f"Use of {node.func.id}()",
                     f"Dynamic code execution via {node.func.id}() - severe security risk",
                     node,
@@ -107,8 +177,17 @@ class PythonASTVisitor(ast.NodeVisitor):
             first_arg = args[0]
             if not self._is_safe_command(first_arg):
                 severity = "CRITICAL" if shell_true else "HIGH"
+                # Confidence based on taint analysis
+                if self._is_tainted(first_arg):
+                    confidence = "HIGH"
+                elif isinstance(first_arg, ast.Constant):
+                    confidence = "LOW"
+                else:
+                    confidence = "MEDIUM"
+                if shell_true:
+                    confidence = "HIGH"
                 self._add_finding(
-                    "AMCP101", severity,
+                    "AMCP101", severity, confidence,
                     "Command injection via subprocess" + (" (shell=True)" if shell_true else ""),
                     "subprocess call with dynamic command arguments detected",
                     node,
@@ -142,10 +221,9 @@ class PythonASTVisitor(ast.NodeVisitor):
             method_name = func.attr
             if isinstance(func.value, ast.Name):
                 lib_name = func.value.id
-            elif isinstance(func.value, ast.Attribute):
+            elif isinstance(func.value, ast.Attribute) and isinstance(func.value.value, ast.Name):
                 # e.g., requests.get, httpx.Client.get
-                if isinstance(func.value.value, ast.Name):
-                    lib_name = func.value.value.id
+                lib_name = func.value.value.id
 
         if method_name in http_methods and lib_name in http_libs:
             # Check if URL argument is dynamic
@@ -159,8 +237,9 @@ class PythonASTVisitor(ast.NodeVisitor):
                         break
 
             if url_arg and not self._is_safe_url(url_arg):
+                confidence = "HIGH" if self._is_tainted(url_arg) else "MEDIUM"
                 self._add_finding(
-                    "AMCP103", "HIGH",
+                    "AMCP103", "HIGH", confidence,
                     "Potential SSRF (Server-Side Request Forgery)",
                     f"HTTP request with dynamic URL detected ({lib_name}.{method_name})",
                     node,
@@ -205,8 +284,9 @@ class PythonASTVisitor(ast.NodeVisitor):
                     break
 
         if path_arg and self._is_user_controlled_path(path_arg):
+            confidence = "HIGH" if self._is_tainted(path_arg) else "MEDIUM"
             self._add_finding(
-                "AMCP104", "HIGH",
+                "AMCP104", "HIGH", confidence,
                 "Potential Path Traversal",
                 f"File operation with user-controlled path: {func_name}()",
                 node,
@@ -226,9 +306,7 @@ class PythonASTVisitor(ast.NodeVisitor):
             if ".." in val or val.startswith("/"):
                 # Absolute paths or explicit traversal - suspicious
                 # But allow known temp fixtures
-                if "tmp" in val.lower() or "temp" in val.lower():
-                    return False
-                return True
+                return not ("tmp" in val.lower() or "temp" in val.lower())
             return False
 
         # Safe: Path(...).resolve() or Path.cwd() / "literal"
@@ -240,9 +318,8 @@ class PythonASTVisitor(ast.NodeVisitor):
             if isinstance(node.func, ast.Name) and node.func.id == "Path":
                 return all(not self._is_user_controlled_path(arg) for arg in node.args)
             # pathlib.Path operations
-            if isinstance(node.func, ast.Attribute):
-                if node.func.attr in ("joinpath", "__truediv__"):
-                    return any(self._is_user_controlled_path(arg) for arg in node.args)
+            if isinstance(node.func, ast.Attribute) and node.func.attr in ("joinpath", "__truediv__"):
+                return any(self._is_user_controlled_path(arg) for arg in node.args)
             return True  # Other function calls are dynamic
 
         # Unsafe: f-strings, string concatenation, variables
@@ -251,13 +328,12 @@ class PythonASTVisitor(ast.NodeVisitor):
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):  # string concat
             return True
         if isinstance(node, ast.Name):  # variable
+            # Use taint tracking: if tainted, user-controlled
+            if self._is_tainted(node):
+                return True
+            # Non-tainted variable (e.g., local constant) - still potentially user-controlled
             return True
-        if isinstance(node, ast.Subscript):  # indexing like args[0]
-            return True
-        if isinstance(node, ast.Attribute):  # attribute access like obj.path
-            return True
-
-        return False
+        return isinstance(node, (ast.Subscript, ast.Attribute))  # indexing like args[0] or attribute access like obj.path
 
     # === Insecure Deserialization (AMCP105) ===
     def _check_insecure_deserialization(self, node: ast.Call) -> None:
@@ -271,11 +347,10 @@ class PythonASTVisitor(ast.NodeVisitor):
         }
 
         func = node.func
-        if isinstance(func, ast.Attribute):
-            if isinstance(func.value, ast.Name):
-                lib = func.value.id
-                method = func.attr
-                if lib in unsafe_funcs and method in unsafe_funcs[lib]:
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+            lib = func.value.id
+            method = func.attr
+            if lib in unsafe_funcs and method in unsafe_funcs[lib]:
                     # Check if it's yaml.load without Loader=SafeLoader
                     if lib == "yaml" and method == "load":
                         has_safe_loader = any(
@@ -284,11 +359,11 @@ class PythonASTVisitor(ast.NodeVisitor):
                         if has_safe_loader:
                             return
                     self._add_finding(
-                        "AMCP105", "CRITICAL",
+                        "AMCP105", "CRITICAL", "HIGH",
                         f"Insecure Deserialization ({lib}.{method})",
                         f"Use of {lib}.{method}() can lead to arbitrary code execution",
                         node,
-                        f"Use safe alternatives: yaml.safe_load(), json.loads(), or specify Loader=yaml.SafeLoader"
+                        "Use safe alternatives: yaml.safe_load(), json.loads(), or specify Loader=yaml.SafeLoader"
                     )
 
 
@@ -297,7 +372,7 @@ def scan_python_file(file_path: Path) -> list[ASTFinding]:
     try:
         with file_path.open("r", encoding="utf-8") as f:
             source = f.read()
-    except Exception:
+    except OSError:
         return []
 
     try:
@@ -316,9 +391,7 @@ def _is_test_file(file_path: Path) -> bool:
     # Check for test_*.py or *_test.py patterns
     if name.startswith("test_") and name.endswith(".py"):
         return True
-    if name.endswith("_test.py"):
-        return True
-    return False
+    return name.endswith("_test.py")
 
 
 def _is_in_test_dir(file_path: Path) -> bool:
@@ -336,9 +409,8 @@ def scan_python_directory(root: Path, include_tests: bool = False) -> list[ASTFi
         if any(part in ignore_dirs for part in py_file.parts):
             continue
         # Skip test files/directories unless explicitly included
-        if not include_tests:
-            if _is_test_file(py_file) or _is_in_test_dir(py_file):
-                continue
+        if not include_tests and (_is_test_file(py_file) or _is_in_test_dir(py_file)):
+            continue
         findings.extend(scan_python_file(py_file))
 
     return findings

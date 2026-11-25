@@ -5,17 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.1] - 2026-11-24
+## [3.1.0] - 2026-11-25
+
+### Added
+- **Type Safety & Code Quality**: All mypy type errors resolved (24 fixes across 4 files)
+- **Distribution Ready**: PyPI Trusted Publishing workflow (release.yml), reusable GitHub Action (action.yml), pre-commit hooks (.pre-commit-hooks.yaml)
+- **Documentation Overhaul**: README.md completely rewritten with feature matrix table, quick-start examples, honest benchmarks, and architectural diagrams
+- **CI Hardening**: Fixed pytest asyncio fixture loop scope error (pyproject.toml)
+
+### Changed
+- Version bump to 3.1.0 across all package files (pyproject.toml, src/aegismcp/__init__.py)
+- Cleaned CHANGELOG.md: removed duplicated v3.1.0/3.0.2 entries, fixed v3.0.1 section categorization
+- All linting passes: mypy (--ignore-missing-imports), ruff, pytest (87 tests pass)
 
 ### Fixed
-- **Phase 1 hardening**: Bidirectional Anti-Evasion Runtime Proxy complete (AMCP309)
-  - Server-to-client response inspection for indirect prompt injection/secret leakage/invisible Unicode
+- html_report.py: Finding.column attribute access guarded with hasattr() (line 888)
+- inspector.py: JSONRPCClient process type annotation, None checks for stdin/stdout/client
+- scanner.py: Type annotation for findings list
+- proxy.py: RateLimiter.tokens type annotation, loop variable naming collision with InjectionPattern class, optional import type ignores
+
+## [3.0.1] - 2026-11-24
+
+### Added
+- **Phase 1 Hardening: Bidirectional Anti-Evasion Runtime Proxy (AMCP309)**
+  - Server-to-client response inspection for indirect prompt injection, secret leakage, invisible Unicode
   - Multi-stage anti-evasion normalizer (Unicode NFKC, iterative URL/Base64/Hex decoding, enhanced SSRF for alternative IP formats)
   - Weighted prompt injection scoring engine with strict/balanced modes configurable via proxy-policy.yaml
   - Protocol-safe async blocking with JSON-RPC 2.0 error objects (code: -32001)
-  - Three regex fixes in rules_core.py enabling all 32 tests to pass
-
-### Added
 - AMCP309 server-to-client response inspection module
 - PromptInjectionScorer with ScoringMode enum (STRICT/BALANCED) and InjectionPattern dataclass
 - Normalizer class with multi-stage decoding pipeline (NFKC, URL, Base64, Hex)
@@ -23,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - create_scorer_from_config() for policy file integration
 - RESPONSE_INJECTION_PATTERNS, RESPONSE_SECRET_PATTERNS, RESPONSE_INVISIBLE_UNICODE_PATTERNS in rules_core.py
 - `prompt_injection_mode` setting in proxy-policy.yaml (strict/balanced)
+
+### Fixed
+- Three regex fixes in rules_core.py enabling all 32 tests to pass
 - Version bump to 3.0.1 across all package files
 
 ## [3.0.0] - 2026-11-23

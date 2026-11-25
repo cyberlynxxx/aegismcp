@@ -1,6 +1,4 @@
 """Tests for lock and verify commands."""
-import pytest
-from pathlib import Path
 import json
 
 
@@ -9,7 +7,7 @@ class TestLockVerify:
 
     def test_lock_creates_lockfile(self, vulnerable_mcp_path, temp_dir):
         """Test that lock command creates a valid lockfile."""
-        from aegismcp import create_lock_from_config, Lockfile
+        from aegismcp import create_lock_from_config
 
         lockfile = create_lock_from_config(vulnerable_mcp_path)
 
@@ -25,7 +23,7 @@ class TestLockVerify:
 
     def test_lock_save_and_load(self, vulnerable_mcp_path, temp_dir):
         """Test saving and loading a lockfile."""
-        from aegismcp import create_lock_from_config, Lockfile
+        from aegismcp import Lockfile, create_lock_from_config
 
         lockfile = create_lock_from_config(vulnerable_mcp_path)
         lock_path = temp_dir / "test.lock.json"
@@ -51,7 +49,7 @@ class TestLockVerify:
 
     def test_verify_modified_config_fails(self, vulnerable_mcp_path, temp_dir):
         """Test verify catches modified config."""
-        from aegismcp import create_lock_from_config, Lockfile, verify_lockfile
+        from aegismcp import Lockfile, create_lock_from_config, verify_lockfile
 
         lockfile = create_lock_from_config(vulnerable_mcp_path)
         lock_path = temp_dir / "test.lock.json"
@@ -74,7 +72,7 @@ class TestLockVerify:
 
     def test_verify_missing_server(self, vulnerable_mcp_path, temp_dir):
         """Test verify catches missing server."""
-        from aegismcp import create_lock_from_config, Lockfile, verify_lockfile
+        from aegismcp import Lockfile, create_lock_from_config, verify_lockfile
 
         lockfile = create_lock_from_config(vulnerable_mcp_path)
         lock_path = temp_dir / "test.lock.json"
@@ -95,7 +93,7 @@ class TestLockVerify:
 
     def test_verify_new_server(self, vulnerable_mcp_path, temp_dir):
         """Test verify catches new server not in lockfile."""
-        from aegismcp import create_lock_from_config, Lockfile, verify_lockfile
+        from aegismcp import Lockfile, create_lock_from_config, verify_lockfile
 
         lockfile = create_lock_from_config(vulnerable_mcp_path)
         lock_path = temp_dir / "test.lock.json"

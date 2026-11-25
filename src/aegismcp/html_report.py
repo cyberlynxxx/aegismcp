@@ -1,14 +1,11 @@
 """Minimalist Dark-Mode HTML Audit Report for AegisMCP."""
 from __future__ import annotations
 
-import json
 import html
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .rules_core import Finding
-from .ast_scanner import ASTFinding
 from .reporter import calculate_security_score
 
 
@@ -851,7 +848,8 @@ def generate_html_report(
     details_section = ""
     if options.include_details and findings:
         # Group by target
-        grouped = {}
+        from .rules_core import Finding
+        grouped: dict[str, list[Finding]] = {}
         for f in findings:
             location = getattr(f, "location", "unknown")
             if ":" in location:
@@ -877,7 +875,7 @@ def generate_html_report(
 
                 # Build expanded content
                 expanded_html = ""
-                if hasattr(finding, "file_path") and hasattr(finding, "line"):
+                if hasattr(finding, "file_path") and hasattr(finding, "line") and hasattr(finding, "column"):
                     # ASTFinding has extra details
                     expanded_html = f"""
                     <div class="detail-grid">

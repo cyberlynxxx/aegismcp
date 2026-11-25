@@ -4,22 +4,23 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import signal
-import subprocess
-import sys
-import time
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import httpx
-except ImportError:
-    httpx = None
+except ImportError:  # pragma: no cover
+    httpx = None  # type: ignore
 
+from .lockfile import (
+    Lockfile,
+    ServerLock,
+    ToolDefinition,
+    compute_tool_hash,
+    verify_tools,
+)
 from .rules_core import Finding
-from .lockfile import Lockfile, ServerLock, ToolDefinition, verify_tools, update_lockfile_with_tools, compute_tool_hash
 
 
 @dataclass
@@ -45,12 +46,12 @@ class MCPServerInfo:
 class InspectorOptions:
     """Options for the inspector."""
     timeout: float = 10.0
-    command: Optional[list[str]] = None
-    url: Optional[str] = None
-    config_file: Optional[Path] = None
+    command: list[str] | None = None
+    url: str | None = None
+    config_file: Path | None = None
     fail_on: str = "HIGH"
-    sarif: Optional[Path] = None
-    html: Optional[Path] = None
+    sarif: Path | None = None
+    html: Path | None = None
     compact: bool = False
     verbose: bool = False
     show_color: bool = True
@@ -60,7 +61,7 @@ class InspectorOptions:
 class JSONRPCClient:
     """Lightweight JSON-RPC 2.0 client for MCP communication."""
 
-    def __init__(self, process: Optional[subprocess.Popen] = None, http_client: Optional[Any] = None):
+    def __init__(self, process: asyncio.subprocess.Process | None = None, http_client: Any | None = None):
         self.process = process
         self.http_client = http_client
         self.request_id = 0
@@ -69,7 +70,7 @@ class JSONRPCClient:
         self.request_id += 1
         return self.request_id
 
-    async def send_request(self, method: str, params: Optional[dict] = None) -> dict:
+    async def send_request(self, method: str, params: dict | None = None) -> dict:
         """Send a JSON-RPC request and return the response."""
         request = {
             "jsonrpc": "2.0",
@@ -86,17 +87,17 @@ class JSONRPCClient:
         else:
             raise RuntimeError("No transport configured")
 
-    async def send_notification(self, method: str, params: Optional[dict] = None):
+    async def send_notification(self, method: str, params: dict | None = None):
         """Send a JSON-RPC notification (no response expected)."""
-        request = {
+        request: dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": method,
         }
         if params is not None:
             request["params"] = params
 
-        if self.process:
-            await self._send_stdio_notification(request)
+        if self.process and self.process.stdin:
+            await self._send_stdio_notification(request)  # type: ignore[union-attr]
         elif self.http_client:
             await self._send_http(request)  # For HTTP, we still send and ignore response
         else:
@@ -111,13 +112,14 @@ class JSONRPCClient:
         request_line = (json.dumps(request) + "\n").encode()
         try:
             self.process.stdin.write(request_line)
+            assert self.process.stdin is not None  # For type checking
             await self.process.stdin.drain()
         except (BrokenPipeError, OSError) as e:
             raise RuntimeError(f"Failed to write to process: {e}")
 
     async def _send_stdio(self, request: dict) -> dict:
         """Send request via stdio transport."""
-        if not self.process or self.process.stdin is None:
+        if not self.process or self.process.stdin is None or self.process.stdout is None:
             raise RuntimeError("Process not available for stdio")
 
         # Write request
@@ -186,8 +188,8 @@ class MCPInspector:
 
     def __init__(self, options: InspectorOptions):
         self.options = options
-        self.client: Optional[JSONRPCClient] = None
-        self.server_info: Optional[MCPServerInfo] = None
+        self.client: JSONRPCClient | None = None
+        self.server_info: MCPServerInfo | None = None
         self.findings: list[Finding] = []
 
     async def connect_stdio(self, command: list[str]) -> MCPServerInfo:
@@ -243,6 +245,8 @@ class MCPInspector:
 
     async def _handshake(self, identifier: str) -> MCPServerInfo:
         """Perform MCP handshake: initialize -> notifications/initialized -> tools/list"""
+        if self.client is None:
+            raise RuntimeError("Client not initialized")
         # Initialize
         init_result = await self.client.send_request("initialize", {
             "protocolVersion": "2024-11-05",
@@ -276,7 +280,7 @@ class MCPInspector:
         try:
             resources_result = await self.client.send_request("resources/list", {})
             resources = resources_result.get("resources", [])
-        except Exception:
+        except (asyncio.TimeoutError, ConnectionError, OSError):
             pass
 
         # List prompts (optional)
@@ -284,7 +288,7 @@ class MCPInspector:
         try:
             prompts_result = await self.client.send_request("prompts/list", {})
             prompts = prompts_result.get("prompts", [])
-        except Exception:
+        except (asyncio.TimeoutError, ConnectionError, OSError):
             pass
 
         self.server_info = MCPServerInfo(
@@ -307,16 +311,16 @@ class MCPInspector:
 
         for tool in self.server_info.tools:
             # AMCP005 - Tool poisoning patterns
-            findings.extend(self._check_tool_poisoning(tool))
+            findings.extend(self._check_tool_poisoning(tool, self.server_info.name))
 
             # AMCP006 - Abnormally long descriptions
-            findings.extend(self._check_long_description(tool))
+            findings.extend(self._check_long_description(tool, self.server_info.name))
 
             # AMCP007 - Hidden invisible Unicode characters
-            findings.extend(self._check_invisible_chars(tool))
+            findings.extend(self._check_invisible_chars(tool, self.server_info.name))
 
             # AMCP203 - Over-permissive tool input schema
-            findings.extend(self._check_permissive_schema(tool))
+            findings.extend(self._check_permissive_schema(tool, self.server_info.name))
 
         # AMCP201 - Tool shadowing (duplicate names across servers - single server check)
         # This is more relevant cross-server, but we check for duplicate names within one server
@@ -337,7 +341,7 @@ class MCPInspector:
         self.findings = findings
         return findings
 
-    def _check_tool_poisoning(self, tool: MCPTool) -> list[Finding]:
+    def _check_tool_poisoning(self, tool: MCPTool, server_name: str) -> list[Finding]:
         """Check for tool poisoning patterns (AMCP005)."""
         from .rules_core import PROMPT_INJECTION_PATTERNS
         findings = []
@@ -349,13 +353,13 @@ class MCPInspector:
                     severity="CRITICAL",
                     title=f"Tool Poisoning ({pattern_name})",
                     message=f"Tool '{tool.name}' description matches suspicious prompt injection pattern: {pattern_name}",
-                    location=f"{self.server_info.name}:tools.{tool.name}",
+                    location=f"{server_name}:tools.{tool.name}",
                     remediation="Audit and sanitize the tool description; remove hidden LLM directives"
                 ))
 
         return findings
 
-    def _check_long_description(self, tool: MCPTool) -> list[Finding]:
+    def _check_long_description(self, tool: MCPTool, server_name: str) -> list[Finding]:
         """Check for abnormally long descriptions (AMCP006)."""
         findings = []
         if len(tool.description) > 500:
@@ -364,17 +368,17 @@ class MCPInspector:
                 severity="MEDIUM",
                 title="Abnormally Long Tool Description",
                 message=f"Tool '{tool.name}' description is {len(tool.description)} chars, which can conceal injected prompts",
-                location=f"{self.server_info.name}:tools.{tool.name}",
+                location=f"{server_name}:tools.{tool.name}",
                 remediation="Keep tool descriptions concise and review the full text manually"
             ))
         return findings
 
-    def _check_invisible_chars(self, tool: MCPTool) -> list[Finding]:
+    def _check_invisible_chars(self, tool: MCPTool, server_name: str) -> list[Finding]:
         """Check for invisible Unicode characters (AMCP007)."""
         findings = []
         invisible_chars = []
         for i, ch in enumerate(tool.description):
-            if ch in ("​", "‌", "‍", "⁠", "﻿", "‪", "‫", "‬", "‭", "‮"):
+            if ch in ("\\u200b", "\\u200c", "\\u200d", "\\u2060", "\\ufeff", "\\u202a", "\\u202b", "\\u202c", "\\u202d", "\\u202e"):
                 invisible_chars.append((i, ch))
 
         if invisible_chars:
@@ -383,12 +387,12 @@ class MCPInspector:
                 severity="CRITICAL",
                 title="Hidden Invisible Characters Detected",
                 message=f"Tool '{tool.name}' description contains {len(invisible_chars)} invisible Unicode character(s)",
-                location=f"{self.server_info.name}:tools.{tool.name}",
+                location=f"{server_name}:tools.{tool.name}",
                 remediation="Remove all zero-width, bidi, and Unicode tag characters from the description"
             ))
         return findings
 
-    def _check_permissive_schema(self, tool: MCPTool) -> list[Finding]:
+    def _check_permissive_schema(self, tool: MCPTool, server_name: str) -> list[Finding]:
         """Check for over-permissive input schemas (AMCP203)."""
         findings = []
         schema = tool.input_schema
@@ -411,7 +415,7 @@ class MCPInspector:
                             severity="MEDIUM",
                             title="Over-Permissive Tool Input Schema",
                             message=f"Tool '{tool.name}' parameter '{param_name}' is an unconstrained string (dangerous: {param_name})",
-                            location=f"{self.server_info.name}:tools.{tool.name}.inputSchema.{param_name}",
+                            location=f"{server_name}:tools.{tool.name}.inputSchema.{param_name}",
                             remediation=f"Add constraints: enum, pattern, maxLength, or format to '{param_name}'"
                         ))
         return findings
@@ -422,7 +426,7 @@ class MCPInspector:
             await self.client.close()
 
 
-async def inspect_live(options: InspectorOptions) -> tuple[list[Finding], Optional[MCPServerInfo]]:
+async def inspect_live(options: InspectorOptions) -> tuple[list[Finding], MCPServerInfo | None]:
     """Main entry point for live inspection."""
     inspector = MCPInspector(options)
 
@@ -445,7 +449,7 @@ async def inspect_live(options: InspectorOptions) -> tuple[list[Finding], Option
 def create_lock_from_live(options: InspectorOptions, server_info: MCPServerInfo) -> Lockfile:
     """Create a lockfile from live server tool definitions."""
     lockfile = Lockfile()
-    server_lock = lockfile.servers[server_info.name] = ServerLock(name=server_info.name)
+    lockfile.servers[server_info.name] = ServerLock(name=server_info.name)
 
     tools = []
     for tool in server_info.tools:

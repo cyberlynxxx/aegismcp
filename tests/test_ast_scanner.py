@@ -1,7 +1,4 @@
 """Tests for AST scanner functionality."""
-import pytest
-from pathlib import Path
-import tempfile
 
 
 class TestASTScanner:
@@ -278,7 +275,7 @@ yaml.load(data, Loader=yaml.SafeLoader)
 
     def test_ast_scan_sarif_export(self, test_server_path, temp_dir):
         """Test SARIF export from AST findings."""
-        from aegismcp import scan_python_file, export_sarif
+        from aegismcp import export_sarif, scan_python_file
         from aegismcp.rules_core import Finding
 
         findings = scan_python_file(test_server_path)

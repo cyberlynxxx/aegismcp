@@ -1,8 +1,9 @@
 """Rule registry for built-in and custom rules."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from ..rules_core import Finding
 
@@ -16,7 +17,7 @@ class Rule:
     description: str
     remediation: str
     # Function that takes (data, location) and returns list[Finding]
-    check_fn: Callable[[dict[str, Any], str], list[Finding]]
+    check_fn: Callable[[dict[str, Any], str], list[Finding]] | None = None
 
 
 class RuleRegistry:
@@ -51,9 +52,7 @@ class RuleRegistry:
         for rule in self._rules.values():
             if rule.rule_id in config_rules:
                 rule_config = config_rules[rule.rule_id]
-                if isinstance(rule_config, bool) and not rule_config:
-                    continue
-                elif isinstance(rule_config, dict) and not rule_config.get("enabled", True):
+                if isinstance(rule_config, bool) and not rule_config or isinstance(rule_config, dict) and not rule_config.get("enabled", True):
                     continue
             result.append(rule)
         return result

@@ -30,7 +30,7 @@ class Normalizer:
     HEX_PATTERN = re.compile(r'^[0-9a-fA-F]+$')
 
     @classmethod
-    def normalize(cls, text: str, max_iterations: int = None) -> str:
+    def normalize(cls, text: str, max_iterations: int | None = None) -> str:
         """
         Apply full normalization pipeline to text.
 
@@ -84,7 +84,7 @@ class Normalizer:
                 if decoded == text:
                     break
                 text = decoded
-            except Exception:
+            except (ValueError, UnicodeDecodeError):
                 break
 
         return text
@@ -154,12 +154,12 @@ class Normalizer:
         return cls.HEX_PATTERN.match(text) is not None
 
     @classmethod
-    def normalize_dict(cls, data: dict, max_iterations: int = None) -> dict:
+    def normalize_dict(cls, data: dict, max_iterations: int | None = None) -> dict[str, Any]:
         """Recursively normalize all string values in a dict."""
         if max_iterations is None:
             max_iterations = cls.MAX_DECODE_ITERATIONS
 
-        result = {}
+        result: dict[str, Any] = {}
         for key, value in data.items():
             if isinstance(value, str):
                 result[key] = cls.normalize(value, max_iterations)
@@ -172,12 +172,12 @@ class Normalizer:
         return result
 
     @classmethod
-    def normalize_list(cls, data: list, max_iterations: int = None) -> list:
+    def normalize_list(cls, data: list, max_iterations: int | None = None) -> list[Any]:
         """Recursively normalize all string values in a list."""
         if max_iterations is None:
             max_iterations = cls.MAX_DECODE_ITERATIONS
 
-        result = []
+        result: list[Any] = []
         for item in data:
             if isinstance(item, str):
                 result.append(cls.normalize(item, max_iterations))
@@ -228,7 +228,7 @@ def is_suspicious_ip(address: str) -> bool:
     try:
         parsed = urlparse(address if '://' in address else 'http://' + address)
         hostname = parsed.hostname or ''
-    except Exception:
+    except (ValueError, AttributeError):
         hostname = address
 
     if not hostname:
@@ -324,10 +324,7 @@ def _check_ipv6_suspicious(hostname: str) -> bool:
         return True
 
     # Check for unique local (fc00::/7)
-    if ipv6.startswith('fc') or ipv6.startswith('fd'):
-        return True
-
-    return False
+    return bool(ipv6.startswith(('fc', 'fd')))
 
 
 def _is_private_ipv4(octets: list[int]) -> bool:
@@ -367,7 +364,4 @@ def _is_private_ipv4(octets: list[int]) -> bool:
         return True
     if a == 198 and b == 51 and c == 100:
         return True
-    if a == 203 and b == 0 and c == 113:
-        return True
-
-    return False
+    return bool(a == 203 and b == 0 and c == 113)

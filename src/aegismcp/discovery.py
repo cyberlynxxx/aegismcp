@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import os
 import platform
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 
 def get_config_paths() -> list[Path]:
@@ -125,7 +125,7 @@ def _looks_like_mcp_config(path: Path) -> bool:
         # Check for MCP-specific keys
         if isinstance(data, dict):
             return any(key in data for key in ("mcpServers", "servers", "tools", "resources", "prompts"))
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         pass
     return False
 

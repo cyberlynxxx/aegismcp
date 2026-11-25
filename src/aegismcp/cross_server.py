@@ -1,14 +1,13 @@
 """Cross-Server & Schema Security Rules - AMCP201, AMCP202, AMCP203."""
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
 
-from .rules_core import Finding
-from .lockfile import Lockfile, Lockfile as LockfileType, compute_tool_hash
 from .inspector import MCPServerInfo, MCPTool
+from .lockfile import Lockfile as LockfileType
+from .lockfile import compute_tool_hash
+from .rules.builtins.cross_rules import _check_schema_recursive
+from .rules_core import Finding
 
 
 @dataclass
@@ -213,12 +212,6 @@ class CrossServerChecker:
         """AMCP203 - Over-permissive tool input schemas (cross-server awareness)."""
         findings = []
 
-        dangerous_params = {
-            "command", "cmd", "url", "path", "file", "filename",
-            "sql", "query", "script", "code", "exec", "command",
-            "host", "endpoint", "uri", "target", "destination"
-        }
-
         for tool in server.tools:
             if tool.name in self.config.allowlist:
                 continue
@@ -227,40 +220,17 @@ class CrossServerChecker:
             if not isinstance(schema, dict):
                 continue
 
-            properties = schema.get("properties", {})
-
-            for param_name, prop_schema in properties.items():
-                if param_name.lower() in dangerous_params:
-                    if not isinstance(prop_schema, dict):
-                        continue
-
-                    if prop_schema.get("type") == "string":
-                        has_constraints = any(
-                            k in prop_schema
-                            for k in ("enum", "pattern", "maxLength", "format", "const")
-                        )
-
-                        if not has_constraints:
-                            # Check if this parameter is also dangerous in other servers
-                            other_servers = []
-                            for other_server in []:
-                                # This would be populated if we had access to all servers
-                                pass
-
-                            findings.append(Finding(
-                                rule_id="AMCP203",
-                                severity="MEDIUM",
-                                title="Over-Permissive Tool Input Schema",
-                                message=(
-                                    f"Tool '{tool.name}' parameter '{param_name}' "
-                                    f"is an unconstrained string (dangerous param: {param_name})"
-                                ),
-                                location=f"{server.name}:tools.{tool.name}.inputSchema.{param_name}",
-                                remediation=(
-                                    f"Add constraints to '{param_name}': "
-                                    f"enum, pattern, maxLength, format, or const"
-                                )
-                            ))
+            if not _check_schema_recursive(schema):
+                # Include tool description in message for XSS detection/escaping
+                desc = tool.description or ""
+                findings.append(Finding(
+                    rule_id="AMCP203",
+                    severity="MEDIUM",
+                    title="Overly Permissive Input Schema",
+                    message=f"Tool '{tool.name}' input schema lacks validation constraints (pattern, enum, min/max, etc.). Description: {desc}",
+                    location=f"{server.name}:tools.{tool.name}.inputSchema",
+                    remediation="Add pattern, enum, or numeric constraints to tool input parameters to prevent injection.",
+                ))
 
         return findings
 
