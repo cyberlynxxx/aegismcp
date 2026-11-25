@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Adversarial Evasion Test Suite for AegisMCP v3.0.2
 

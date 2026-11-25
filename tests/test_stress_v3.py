@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Adversarial/Stress Test Suite for AegisMCP v3.0.1
 
