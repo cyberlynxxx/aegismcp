@@ -29,7 +29,7 @@ jobs:
 
     - name: Run pip-audit for dependency vulnerabilities
       run: |
-        pip-audit --skip-editable
+        python -m pip install --upgrade "setuptools>=84.1.0" "filelock>=4.2.1" && pip-audit --skip-editable
 
     - name: Run ruff linting
       run: |
