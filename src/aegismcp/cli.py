@@ -131,7 +131,39 @@ def cmd_scan(args: argparse.Namespace) -> int:
         no_color=args.no_color,
         fail_on=config.fail_on,
     )
-    return print_report(all_findings, files_scanned, report_opts)
+    exit_code = print_report(all_findings, files_scanned, report_opts)
+
+    # Export HTML if requested
+    if args.html:
+        html_opts = HTMLReportOptions(
+            title="AegisMCP Scan Report",
+            theme="dark"
+        )
+        metadata = {
+            "FilesScanned": files_scanned,
+            "FindingsCount": len(all_findings),
+        }
+        save_html_report(all_findings, Path(args.html), files_scanned, html_opts, metadata)
+        print(f"HTML report saved to {args.html}")
+
+    # SARIF export for scan command
+    if args.sarif:
+        from .rules_core import Finding
+        # Convert findings to Finding format for SARIF export
+        sarif_findings = []
+        for f in all_findings:
+            sarif_findings.append(Finding(
+                rule_id=getattr(f, "rule_id", "AMCP000"),
+                severity=getattr(f, "severity", "MEDIUM"),
+                title=getattr(f, "title", "Security Issue"),
+                message=getattr(f, "message", str(f)),
+                location=getattr(f, "location", str(f)),
+                remediation=getattr(f, "remediation", ""),
+            ))
+        export_sarif(sarif_findings, Path(args.sarif))
+        print(f"SARIF report saved to {args.sarif}")
+
+    return exit_code
 
 
 def cmd_lock(args: argparse.Namespace) -> int:
@@ -291,6 +323,19 @@ def cmd_ast_scan(args: argparse.Namespace) -> int:
     )
     exit_code = print_report(findings, file_count, report_opts)
 
+    # Export HTML if requested
+    if args.html:
+        html_opts = HTMLReportOptions(
+            title="AegisMCP AST Scan Report",
+            theme="dark"
+        )
+        metadata = {
+            "FilesScanned": file_count,
+            "FindingsCount": len(findings),
+        }
+        save_html_report(findings, Path(args.html), file_count, html_opts, metadata)
+        print(f"HTML report saved to {args.html}")
+
     if args.sarif:
         # Convert ASTFinding to regular Finding for SARIF export
         from .rules_core import Finding
@@ -305,6 +350,23 @@ def cmd_ast_scan(args: argparse.Namespace) -> int:
             )
             for f in findings
         ]
+        export_sarif(sarif_findings, Path(args.sarif))
+        print(f"SARIF report saved to {args.sarif}")
+
+    # SARIF export for scan command (non-AST findings)
+    if args.sarif and not should_auto:
+        from .reporter import Finding
+        # Convert findings to Finding format for SARIF export
+        sarif_findings = []
+        for f in all_findings:
+            sarif_findings.append(Finding(
+                rule_id=getattr(f, "rule_id", "AMCP000"),
+                severity=getattr(f, "severity", "MEDIUM"),
+                title=getattr(f, "title", "Security Issue"),
+                message=getattr(f, "message", str(f)),
+                location=getattr(f, "location", str(f)),
+                remediation=getattr(f, "remediation", ""),
+            ))
         export_sarif(sarif_findings, Path(args.sarif))
         print(f"SARIF report saved to {args.sarif}")
 
@@ -438,6 +500,7 @@ def main() -> None:
     scan_parser.add_argument("target", nargs="?", type=str, default=None, help="Path to MCP config file or folder (optional if --auto or auto_discover in config)")
     scan_parser.add_argument("--auto", action="store_true", help="Auto-discover MCP configs (Claude Desktop, Cursor, Windsurf, VS Code)")
     scan_parser.add_argument("--sarif", type=str, help="Export report to SARIF file")
+    scan_parser.add_argument("--html", type=str, help="Export report to HTML file")
     scan_parser.add_argument("--fail-on", choices=["LOW", "MEDIUM", "HIGH", "CRITICAL"], help="Exit with error if findings at or above this severity")
     scan_parser.add_argument("--no-auto-discover", action="store_true", help="Disable auto-discovery of platform configs")
 
@@ -463,6 +526,7 @@ def main() -> None:
     ast_parser = subparsers.add_parser("ast-scan", help="Scan Python MCP server source code for vulnerabilities")
     ast_parser.add_argument("target", type=str, help="Path to Python file or directory")
     ast_parser.add_argument("--sarif", type=str, help="Export report to SARIF file")
+    ast_parser.add_argument("--html", type=str, help="Export report to HTML file")
     ast_parser.add_argument("--fail-on", choices=["LOW", "MEDIUM", "HIGH", "CRITICAL"], default="HIGH", help="Exit with error if findings at or above this severity")
     ast_parser.add_argument("--include-tests", action="store_true", help="Include test files/directories (tests/, test_*.py, *_test.py)")
     ast_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output with full details")

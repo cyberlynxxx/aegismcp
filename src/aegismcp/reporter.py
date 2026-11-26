@@ -1,6 +1,7 @@
 """Clean, scannable CLI reporter for AegisMCP v3.0.2."""
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass
 from typing import Any
@@ -50,6 +51,11 @@ def _colorize(text: str, severity: str, show_color: bool) -> str:
     return f"{color}{text}{reset}"
 
 
+def _strip_ansi(text: str) -> str:
+    """Strip ANSI escape codes from text for accurate length calculation."""
+    return re.sub(r'\033\[[0-9;]*m', '', text)
+
+
 def _truncate(text: str, max_len: int) -> str:
     """Truncate text with ellipsis if too long."""
     if len(text) <= max_len:
@@ -93,7 +99,7 @@ def _format_finding_compact(finding: Any, show_color: bool) -> str:
     return f"{colored_badge} {conf_badge} {rule_id:<7} {_truncate(title, 28):<28} ({loc_display})"
 
 
-def _format_finding_default(finding: Any, show_color: bool) -> list[str]:
+def _format_finding_default(finding: Any, show_color: bool, verbose: bool = False) -> list[str]:
     """Format a finding in default 3-line aligned block."""
     severity = getattr(finding, "severity", "MEDIUM")
     confidence = getattr(finding, "confidence", "MEDIUM")
@@ -110,15 +116,16 @@ def _format_finding_default(finding: Any, show_color: bool) -> list[str]:
     lines = []
 
     # Line 1: [CRIT] [CONF:H] AMCP005  Tool Poisoning          (server: helper_tool)
-    loc_display = _truncate(location, 50)
-    lines.append(f"{colored_badge} {conf_badge} {rule_id:<7} {_truncate(title, 28):<28} ({loc_display})")
+    loc_display = location if verbose else _truncate(location, 50)
+    title_display = title if verbose else _truncate(title, 28)
+    lines.append(f"{colored_badge} {conf_badge} {rule_id:<7} {title_display:<28} ({loc_display})")
 
     # Line 2: Why: one concise sentence
-    why = _truncate(message, 80) if message else "No details available"
+    why = message if verbose else (_truncate(message, 80) if message else "No details available")
     lines.append(f"       Why: {why}")
 
     # Line 3: Fix: one direct, actionable fix
-    fix = _truncate(remediation, 80) if remediation else "No remediation available"
+    fix = remediation if verbose else (_truncate(remediation, 80) if remediation else "No remediation available")
     lines.append(f"       Fix: {fix}")
 
     return lines
@@ -126,7 +133,7 @@ def _format_finding_default(finding: Any, show_color: bool) -> list[str]:
 
 def _format_finding_verbose(finding: Any, show_color: bool) -> list[str]:
     """Format a finding in verbose mode with full details."""
-    lines = _format_finding_default(finding, show_color)
+    lines = _format_finding_default(finding, show_color, verbose=True)
 
     # Add extra context in verbose mode
     if hasattr(finding, "file_path") and hasattr(finding, "line"):
@@ -239,15 +246,28 @@ def print_summary_box(
             severity_parts.append(pill)
 
     severity_str = "  ".join(severity_parts) if severity_parts else "none"
+    severity_str_stripped = "  ".join([
+        f"{SEVERITY_BADGE[sev].strip()}:{counts[sev]}"
+        for sev in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+        if counts.get(sev, 0) > 0
+    ]) if severity_parts else "none"
 
     # Status
-    status = "PASS" if passed else "FAIL"
+    status_plain = "PASS" if passed else "FAIL"
+    status = status_plain
     if show_color:
-        status = _colorize(status, "LOW" if passed else "CRITICAL", show_color)
+        status = _colorize(status_plain, "LOW" if passed else "CRITICAL", show_color)
+
+    # Pad strings based on stripped length
+    # Line 1: | Security Score: {score:>3}/100  |  Findings: {severity_str} [padded to 35 chars] |
+    sev_pad = max(0, 35 - len(severity_str_stripped))
+
+    # Line 2: | Targets Scanned: {file_count:<3}       |  Status:     {status} [padded to 45 chars] |
+    status_pad = max(0, 45 - len(status_plain))
 
     print("+" + "-" * 62 + "+", file=output)
-    print(f"| Security Score: {score:>3}/100  |  Findings: {severity_str:<35} |", file=output)
-    print(f"| Targets Scanned: {file_count:<3}       |  Status:     {status:<45} |", file=output)
+    print(f"| Security Score: {score:>3}/100  |  Findings: {severity_str}{' ' * sev_pad} |", file=output)
+    print(f"| Targets Scanned: {file_count:<3}       |  Status:     {status}{' ' * status_pad} |", file=output)
     print("+" + "-" * 62 + "+", file=output)
 
 

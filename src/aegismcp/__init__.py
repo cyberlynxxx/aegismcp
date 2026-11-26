@@ -15,8 +15,10 @@ from .rules.registry import Rule, registry
 from .rules_core import Finding
 from .sarif import export_sarif
 from .scanner import scan_directory, scan_file
+from .html_report import HTMLReportOptions, save_html_report
 
-__version__ = "3.2.1"
+
+__version__ = "3.2.2"
 __all__ = [
     "ASTFinding",
     "Config",

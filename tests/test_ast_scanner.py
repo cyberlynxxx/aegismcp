@@ -227,6 +227,72 @@ with open(f"uploads/{user_input}") as f:
         rule_ids = {f.rule_id for f in findings}
         assert "AMCP104" in rule_ids
 
+    def test_ast_scan_amcp104_safe_temp_variable(self, temp_dir):
+        """Test AMCP104 does NOT flag safe temp directory variables (regression for false positive fix)."""
+        from aegismcp import scan_python_file
+
+        code = '''
+import tempfile
+from pathlib import Path
+
+# These should NOT trigger AMCP104 - safe temp variable patterns
+tmp_dir = tempfile.mkdtemp()
+temp_path = Path(tmp_dir) / "page.html"
+temp_path.write_text("hello")
+
+# Safe explicit temp paths
+with open("/tmp/data.txt") as f:
+    pass
+with open("temp/file.txt") as f:
+    pass
+with open("cache/data.json") as f:
+    pass
+
+# Safe Path constructor with temp
+safe_path = Path("tmp", "output.html")
+safe_path.write_text("content")
+
+temp_file = Path(temp_dir, "report.txt")
+temp_file.write_text("report")
+'''
+        f = temp_dir / "test.py"
+        f.write_text(code)
+
+        findings = scan_python_file(f)
+        rule_ids = {f.rule_id for f in findings}
+        # Should NOT flag these as AMCP104
+        assert "AMCP104" not in rule_ids, f"Safe temp paths should not trigger AMCP104: {findings}"
+
+    def test_ast_scan_amcp104_path_traversal_still_detected(self, temp_dir):
+        """Test AMCP104 still detects actual path traversal."""
+        from aegismcp import scan_python_file
+
+        code = '''
+# Explicit traversal should be flagged
+with open("../../../etc/passwd") as f:
+    pass
+
+# Absolute paths should be flagged
+with open("/etc/passwd") as f:
+    pass
+
+# User-controlled paths should be flagged
+user_input = "../../../etc/passwd"
+with open(user_input) as f:
+    pass
+
+# f-string with traversal
+name = "user.txt"
+with open(f"../../data/{name}") as f:
+    pass
+'''
+        f = temp_dir / "test.py"
+        f.write_text(code)
+
+        findings = scan_python_file(f)
+        rule_ids = {f.rule_id for f in findings}
+        assert "AMCP104" in rule_ids, "Path traversal should still be detected"
+
     def test_ast_scan_amcp105_pickle(self, temp_dir):
         """Test AMCP105 detects pickle.loads."""
         from aegismcp import scan_python_file
