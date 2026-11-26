@@ -35,13 +35,23 @@ class PythonASTVisitor(ast.NodeVisitor):
         self._taint_scope: list[dict[str, str]] = [{}]
         # Current function parameters (taint sources)
         self._current_params: set[str] = set()
+        # Variables assigned from safe Path() constructor with literal args
+        self._safe_path_vars: set[str] = set()
+        self._safe_path_vars_stack: list[set[str]] = [self._safe_path_vars]
 
     def _push_scope(self) -> None:
         self._taint_scope.append({})
+        # _safe_path_vars is per-function scope, push a new set
+        self._safe_path_vars_stack = getattr(self, '_safe_path_vars_stack', [self._safe_path_vars])
+        self._safe_path_vars_stack.append(set())
+        self._safe_path_vars = self._safe_path_vars_stack[-1]
 
     def _pop_scope(self) -> None:
         if len(self._taint_scope) > 1:
             self._taint_scope.pop()
+        if hasattr(self, '_safe_path_vars_stack') and len(self._safe_path_vars_stack) > 1:
+            self._safe_path_vars_stack.pop()
+            self._safe_path_vars = self._safe_path_vars_stack[-1]
 
     def _current_taint(self) -> dict[str, str]:
         return self._taint_scope[-1]
@@ -95,6 +105,9 @@ class PythonASTVisitor(ast.NodeVisitor):
                 else:
                     # Remove taint if reassigned to safe value
                     self._current_taint().pop(target.id, None)
+                    # Check if assigned from safe Path() constructor
+                    if self._is_safe_path_constructor(node.value):
+                        self._safe_path_vars.add(target.id)
         self.generic_visit(node)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
@@ -335,7 +348,7 @@ class PythonASTVisitor(ast.NodeVisitor):
                 return False
             # Path() constructor with safe args
             if isinstance(node.func, ast.Name) and node.func.id == "Path":
-                return all(not self._is_user_controlled_path(arg) for arg in node.args)
+                return any(self._is_user_controlled_path(arg) for arg in node.args)
             # pathlib.Path operations
             if isinstance(node.func, ast.Attribute) and node.func.attr in ("joinpath", "__truediv__"):
                 return any(self._is_user_controlled_path(arg) for arg in node.args)
@@ -351,6 +364,10 @@ class PythonASTVisitor(ast.NodeVisitor):
             if self._is_tainted(node):
                 return True
 
+            # Check if variable was assigned from a safe Path() constructor
+            if node.id in self._safe_path_vars:
+                return False
+
             # Check if the variable name suggests a safe temp directory/file or local constant
             var_name = node.id.lower()
             is_safe_var_prefix = any(k == var_name[:3] for k in ("tmp", "temp", "out")) or \
@@ -362,6 +379,13 @@ class PythonASTVisitor(ast.NodeVisitor):
             # For now, if variable name looks like a safe temp/cache dir and not traversal-related, allow it
             return not is_safe_var_prefix
         return isinstance(node, (ast.Subscript, ast.Attribute))  # indexing like args[0] or attribute access like obj.path
+
+    def _is_safe_path_constructor(self, node: ast.AST) -> bool:
+        """Check if a node is a safe Path() constructor with only literal/constant args."""
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Path":
+            # All args must be safe (not user-controlled)
+            return all(not self._is_user_controlled_path(arg) for arg in node.args)
+        return False
 
     # === Insecure Deserialization (AMCP105) ===
     def _check_insecure_deserialization(self, node: ast.Call) -> None:
