@@ -1,6 +1,6 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/banner-dark.svg">
-  <img alt="AegisMCP - Active MCP Security Engine & Runtime Firewall" src="./assets/banner-light.svg" width="520">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/cyberlynxxx/aegismcp/main/assets/banner-dark.svg">
+  <img alt="AegisMCP - Active MCP Security Engine & Runtime Firewall" src="https://raw.githubusercontent.com/cyberlynxxx/aegismcp/main/assets/banner-light.svg" width="520">
 </picture>
 
 <p align="center">
@@ -12,10 +12,10 @@
     <img alt="CI" src="https://github.com/cyberlynxxx/aegismcp/actions/workflows/ci.yml/badge.svg">
   </a>
   <a href="https://github.com/cyberlynxxx/aegismcp/releases/latest">
-    <img alt="Latest Release" src="https://img.shields.io/github/v/release/cyberlynxxx/aegismcp?color=brightgreen">
+    <img alt="Latest Release" src="https://img.shields.io/github/v/release/cyberlynxxx/aegismcp">
   </a>
   <a href="https://pypi.org/project/aegismcp-security/">
-    <img alt="PyPI" src="https://img.shields.io/pypi/v/aegismcp-security?color=blue&label=PyPI">
+    <img alt="PyPI" src="https://img.shields.io/pypi/v/aegismcp-security">
   </a>
   <a href="LICENSE">
     <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg">
@@ -217,11 +217,11 @@ All CLI output uses `[OK]`/`[FAIL]` markers (no Unicode symbols), colored output
 pip install aegismcp-security
 
 # Install from GitHub (for bleeding edge)
-pip install git+https://github.com/cyberlynxxx/aegismcp-security.git
+pip install git+https://github.com/cyberlynxxx/aegismcp.git
 
 # Or from source (editable)
-git clone https://github.com/cyberlynxxx/aegismcp-security
-cd aegismcp-security
+git clone https://github.com/cyberlynxxx/aegismcp
+cd aegismcp
 pip install -e .
 
 # With dev dependencies (for testing)
@@ -310,7 +310,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run AegisMCP Scan
-        uses: cyberlynxxx/aegismcp@v3.2.5
+        uses: cyberlynxxx/aegismcp@v3.2.6
         with:
           target: .
           format: sarif
