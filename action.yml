@@ -1,6 +1,6 @@
 name: 'AegisMCP Security Scanner'
 description: 'Scan MCP configurations, Python/JS source code, and live servers for security vulnerabilities using AegisMCP Security Engine'
-author: 'cyberlynxxx'
+author: 'younessmoufleh'
 branding:
   icon: 'shield'
   color: 'blue'
@@ -64,7 +64,7 @@ runs:
     - name: Install AegisMCP
       shell: bash
       run: |
-        pip install aegismcp-security==3.2.4
+        pip install aegismcp-security==3.2.5
 
     - name: Run AegisMCP Scan
       id: scan

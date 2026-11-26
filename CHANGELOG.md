@@ -5,13 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.5] - 2026-11-26
+
+### Changed
+- Version bump to 3.2.5 across `pyproject.toml`, `src/aegismcp/__init__.py`, `action.yml`, and `README.md` (GitHub Action example).
+
 ## [3.2.4] - 2026-11-26
 
 ### Fixed
 - **CI/Linux failures resolved** — Fixed all `ruff` lint errors (import sorting, unused imports, `subprocess.run` without `check=False`, PIE810 tuple `startswith`), `mypy` type errors, and cross-platform test path issues.
 - **CLI E2E bug fixes verified** — `--sarif` and `--html` exports work for `scan`, `ast-scan`, and `inspect` commands; ANSI summary box alignment fixed; `--verbose` no longer truncates descriptions; AMCP104 false positives for safe temp variable patterns (`tmp_dir`, `temp_path`, `cache_dir`, etc.) eliminated.
 - **Enterprise hardening verified** — `proxy --help` exposes `--mode` (enforce/monitor, fail-closed default); `redact_secrets`, `sanitize_terminal_text`, DoS/ReDoS limits, `yaml.safe_load`, `subprocess` timeouts, and symlink/path-traversal protection confirmed with passing tests.
-- **Package consistency** — All references updated to `aegismcp-security==3.2.4`; `action.yml` uses `using: 'composite'` with `shell: bash` on all steps.
+- **Package consistency** — All references updated to `aegismcp-security==3.2.4`; `action.yml` uses `using: \'composite\'` with `shell: bash` on all steps.
 
 ### Changed
 - Version bump to 3.2.4 across `pyproject.toml`, `src/aegismcp/__init__.py`, `action.yml`, and `README.md` (GitHub Action example).
@@ -118,7 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Default `--fail-on` level changed from MEDIUM to HIGH for stricter CI gating
 - CLI output uses `[OK]`/`[FAIL]` markers for Windows compatibility (no Unicode symbols)
 - Auto-discovery now supports Claude Desktop, Cursor, Windsurf, VS Code on Windows/macOS/Linux
-- Rules reorganized into categories: AMCP001-008 (config), AMCP101-105 (AST), AMCP201-203 (cross-server), AMCP301-308 (runtime proxy)
+- Rules reorganized into categories: AMCP001-008 (config), AMCP101-105 (AST), AMCP201-AMCP203 (cross-server), AMCP301-308 (runtime proxy)
 - Performance: AST scanner excludes test files by default (`tests/`, `test_*.py`, `*_test.py`)
 
 ### Fixed
