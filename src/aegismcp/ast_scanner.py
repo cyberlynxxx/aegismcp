@@ -273,15 +273,34 @@ class PythonASTVisitor(ast.NodeVisitor):
         if func_name not in path_funcs:
             return
 
-        # Check if there's a path argument
+        # Determine the path argument
+        # For standalone functions like open(path), path is first arg
+        # For methods like path.write_text(content), path is the object (node.func.value)
         path_arg = None
-        if node.args:
-            path_arg = node.args[0]
-        else:
-            for kw in node.keywords:
-                if kw.arg in ("path", "file", "filename", "name"):
-                    path_arg = kw.value
-                    break
+
+        if isinstance(node.func, ast.Name):
+            # Standalone function: open(path, ...)
+            if node.args:
+                path_arg = node.args[0]
+            else:
+                for kw in node.keywords:
+                    if kw.arg in ("path", "file", "filename", "name"):
+                        path_arg = kw.value
+                        break
+        elif isinstance(node.func, ast.Attribute):
+            # Method call: obj.method(...)
+            # For write_text/read_bytes/write_bytes, the path is obj, first arg is content
+            if func_name in ("write_text", "write_bytes", "read_bytes", "read_text"):
+                path_arg = node.func.value
+            else:
+                # Other methods (exists, is_file, etc.) - path is first arg
+                if node.args:
+                    path_arg = node.args[0]
+                else:
+                    for kw in node.keywords:
+                        if kw.arg in ("path", "file", "filename", "name"):
+                            path_arg = kw.value
+                            break
 
         if path_arg and self._is_user_controlled_path(path_arg):
             confidence = "HIGH" if self._is_tainted(path_arg) else "MEDIUM"
@@ -334,21 +353,14 @@ class PythonASTVisitor(ast.NodeVisitor):
 
             # Check if the variable name suggests a safe temp directory/file or local constant
             var_name = node.id.lower()
-            is_safe_var_prefix = any(k == var_name[:3] for k in ("tmp", "temp")) or \
-                                var_name in ("tmp", "temp", "temp_dir", "temp_path", "cache_dir", "output_dir", "report_dir")
+            is_safe_var_prefix = any(k == var_name[:3] for k in ("tmp", "temp", "out")) or \
+                                var_name in ("tmp", "temp", "temp_dir", "temp_path", "cache_dir", "output_dir", "report_dir", "output_path", "sarif_path", "html_path", "report_path", "lock_path", "config_path", "target_path")
 
             # Check if literal path in assignment contains traversal - if so, always flag even if var name is safe
             # This handles cases like: user_path = "../../../etc/passwd"
             # We check the assigning node's value through the scope/context
             # For now, if variable name looks like a safe temp/cache dir and not traversal-related, allow it
-            if is_safe_var_prefix:
-                # Safe variables like tmp_dir, temp_path etc. are not user-controlled by name alone
-                # But if the literal has .., it should still be flagged
-                # The literal path check happens in _is_user_controlled_path for Constant nodes,
-                # but for variables we rely on taint tracking
-                return False
-
-            return True
+            return not is_safe_var_prefix
         return isinstance(node, (ast.Subscript, ast.Attribute))  # indexing like args[0] or attribute access like obj.path
 
     # === Insecure Deserialization (AMCP105) ===

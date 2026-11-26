@@ -64,14 +64,13 @@ class TestScanCommand:
 
     def test_scan_cli_sarif_export(self, vulnerable_mcp_path, temp_dir, capsys):
         """Test --sarif flag in CLI scan command."""
-        from pathlib import Path
-
         sarif_path = temp_dir / "cli_report.sarif"
         result = subprocess.run(
             [sys.executable, "-m", "aegismcp", "scan", "--sarif", str(sarif_path), str(vulnerable_mcp_path)],
             capture_output=True,
             text=True,
             cwd=Path(__file__).parent.parent,
+            check=False,
         )
         # Should complete without error and output summary
         assert result.returncode in (0, 1)
@@ -80,14 +79,13 @@ class TestScanCommand:
 
     def test_scan_cli_html_export(self, vulnerable_mcp_path, temp_dir, capsys):
         """Test --html flag in CLI scan command."""
-        from pathlib import Path
-
         html_path = temp_dir / "cli_report.html"
         result = subprocess.run(
             [sys.executable, "-m", "aegismcp", "scan", "--html", str(html_path), str(vulnerable_mcp_path)],
             capture_output=True,
             text=True,
             cwd=Path(__file__).parent.parent,
+            check=False,
         )
         # Should complete without error and output summary
         assert result.returncode in (0, 1)
@@ -196,7 +194,7 @@ class TestScanE2EBugFixes:
     def test_scan_verbose_no_truncation(self, vulnerable_mcp_path, temp_dir, capsys):
         """Test that --verbose doesn't truncate Why:/Fix: descriptions."""
         from aegismcp import Config, scan_file
-        from aegismcp.reporter import print_report, ReportOptions
+        from aegismcp.reporter import ReportOptions, print_report
 
         config = Config()
         findings = scan_file(vulnerable_mcp_path, config)
@@ -218,7 +216,7 @@ class TestScanE2EBugFixes:
     def test_scan_non_verbose_truncation(self, vulnerable_mcp_path, temp_dir, capsys):
         """Test that non-verbose mode truncates Why:/Fix: descriptions."""
         from aegismcp import Config, scan_file
-        from aegismcp.reporter import print_report, ReportOptions
+        from aegismcp.reporter import ReportOptions, print_report
 
         config = Config()
         findings = scan_file(vulnerable_mcp_path, config)
@@ -243,7 +241,7 @@ class TestScanE2EBugFixes:
     def test_summary_box_ansi_padding(self, vulnerable_mcp_path, temp_dir, capsys):
         """Test that summary box right border aligns correctly with ANSI colors."""
         from aegismcp import Config, scan_file
-        from aegismcp.reporter import print_report, ReportOptions
+        from aegismcp.reporter import ReportOptions, print_report
 
         config = Config()
         findings = scan_file(vulnerable_mcp_path, config)
@@ -257,7 +255,7 @@ class TestScanE2EBugFixes:
 
         # Find the summary box lines
         lines = output.split("\n")
-        box_lines = [l for l in lines if l.startswith("+") or l.startswith("| Security Score") or l.startswith("| Targets Scanned")]
+        box_lines = [l for l in lines if l.startswith(("+", "| Security Score", "| Targets Scanned"))]
 
         # Verify box structure - each line should have same visual width
         # The right border should align (both lines end with "|")
@@ -275,44 +273,41 @@ class TestScanE2EBugFixes:
 
     def test_ast_scan_cli_html_export(self, test_server_path, temp_dir):
         """Test --html flag in CLI ast-scan command."""
-        from pathlib import Path
-
         html_path = temp_dir / "ast_report.html"
         result = subprocess.run(
             [sys.executable, "-m", "aegismcp", "ast-scan", "--html", str(html_path), str(test_server_path)],
             capture_output=True,
             text=True,
             cwd=Path(__file__).parent.parent,
+            check=False,
         )
         assert result.returncode in (0, 1)
         assert html_path.exists(), "HTML report should be created from CLI ast-scan"
 
     def test_ast_scan_cli_sarif_export(self, test_server_path, temp_dir):
         """Test --sarif flag in CLI ast-scan command."""
-        from pathlib import Path
-
         sarif_path = temp_dir / "ast_report.sarif"
         result = subprocess.run(
             [sys.executable, "-m", "aegismcp", "ast-scan", "--sarif", str(sarif_path), str(test_server_path)],
             capture_output=True,
             text=True,
             cwd=Path(__file__).parent.parent,
+            check=False,
         )
         assert result.returncode in (0, 1)
         assert sarif_path.exists(), "SARIF file should be created from CLI ast-scan"
 
     def test_inspect_cli_html_export(self, temp_dir):
         """Test --html flag in CLI inspect command (requires live server, test structure only)."""
-        from pathlib import Path
-
         # This test just verifies the CLI argument exists and doesn't crash on parse
         # We can't easily test without a live server
-        html_path = temp_dir / "inspect_report.html"
+        temp_dir / "inspect_report.html"
         result = subprocess.run(
             [sys.executable, "-m", "aegismcp", "inspect", "--help"],
             capture_output=True,
             text=True,
             cwd=Path(__file__).parent.parent,
+            check=False,
         )
         # Verify --html is in help
         assert "--html" in result.stdout

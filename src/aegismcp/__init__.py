@@ -4,6 +4,7 @@ from .ast_scanner import ASTFinding, scan_python_directory, scan_python_file
 from .cli import main
 from .config import Config
 from .discovery import discover_mcp_files, get_config_paths
+from .html_report import HTMLReportOptions, save_html_report
 from .lockfile import (
     Lockfile,
     create_lock_from_config,
@@ -15,14 +16,13 @@ from .rules.registry import Rule, registry
 from .rules_core import Finding
 from .sarif import export_sarif
 from .scanner import scan_directory, scan_file
-from .html_report import HTMLReportOptions, save_html_report
 
-
-__version__ = "3.2.2"
+__version__ = "3.2.4"
 __all__ = [
     "ASTFinding",
     "Config",
     "Finding",
+    "HTMLReportOptions",
     "Lockfile",
     "Rule",
     "create_lock_from_config",
@@ -32,6 +32,7 @@ __all__ = [
     "get_config_paths",
     "main",
     "registry",
+    "save_html_report",
     "scan_directory",
     "scan_file",
     "scan_python_directory",

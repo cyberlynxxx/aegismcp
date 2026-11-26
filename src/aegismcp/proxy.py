@@ -49,6 +49,9 @@ class ProxyConfig:
     block_medium: bool = False
     block_low: bool = False
 
+    # Proxy mode: "enforce" (block findings) or "monitor" (audit only, fail-closed default)
+    mode: str = "enforce"  # "enforce" or "monitor"
+
     # Prompt injection scoring
     prompt_injection_mode: str = "balanced"  # "strict" or "balanced"
     response_scanning_enabled: bool = True
@@ -709,6 +712,10 @@ class MCPProxy:
 
     def _should_block(self, findings: list[Finding]) -> bool:
         """Determine if request should be blocked based on findings and config."""
+        # In monitor mode, audit but never block (fail-closed = enforce by default)
+        if self.config.mode == "monitor":
+            return False
+
         for f in findings:
             if f.severity == "CRITICAL" and self.config.block_critical:
                 return True

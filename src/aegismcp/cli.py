@@ -151,14 +151,14 @@ def cmd_scan(args: argparse.Namespace) -> int:
         from .rules_core import Finding
         # Convert findings to Finding format for SARIF export
         sarif_findings = []
-        for f in all_findings:
+        for item in all_findings:
             sarif_findings.append(Finding(
-                rule_id=getattr(f, "rule_id", "AMCP000"),
-                severity=getattr(f, "severity", "MEDIUM"),
-                title=getattr(f, "title", "Security Issue"),
-                message=getattr(f, "message", str(f)),
-                location=getattr(f, "location", str(f)),
-                remediation=getattr(f, "remediation", ""),
+                rule_id=getattr(item, "rule_id", "AMCP000"),
+                severity=getattr(item, "severity", "MEDIUM"),
+                title=getattr(item, "title", "Security Issue"),
+                message=getattr(item, "message", str(item)),
+                location=getattr(item, "location", str(item)),
+                remediation=getattr(item, "remediation", ""),
             ))
         export_sarif(sarif_findings, Path(args.sarif))
         print(f"SARIF report saved to {args.sarif}")
@@ -353,23 +353,6 @@ def cmd_ast_scan(args: argparse.Namespace) -> int:
         export_sarif(sarif_findings, Path(args.sarif))
         print(f"SARIF report saved to {args.sarif}")
 
-    # SARIF export for scan command (non-AST findings)
-    if args.sarif and not should_auto:
-        from .reporter import Finding
-        # Convert findings to Finding format for SARIF export
-        sarif_findings = []
-        for f in all_findings:
-            sarif_findings.append(Finding(
-                rule_id=getattr(f, "rule_id", "AMCP000"),
-                severity=getattr(f, "severity", "MEDIUM"),
-                title=getattr(f, "title", "Security Issue"),
-                message=getattr(f, "message", str(f)),
-                location=getattr(f, "location", str(f)),
-                remediation=getattr(f, "remediation", ""),
-            ))
-        export_sarif(sarif_findings, Path(args.sarif))
-        print(f"SARIF report saved to {args.sarif}")
-
     return exit_code
 
 
@@ -462,6 +445,7 @@ def cmd_proxy(args: argparse.Namespace) -> int:
         bind_port=port,
         timeout=args.timeout,
         fail_on=args.fail_on,
+        mode=args.mode,  # "enforce" or "monitor"
         audit_log=Path(args.audit_log) if args.audit_log else None,
         audit_format=args.audit_format,
         max_requests_per_second=args.rate_limit,
@@ -553,6 +537,7 @@ def main() -> None:
     proxy_parser.add_argument("--bind", type=str, default="127.0.0.1:8080", help="Bind address (host:port)")
     proxy_parser.add_argument("--timeout", type=float, default=30.0, help="Upstream connection timeout")
     proxy_parser.add_argument("--fail-on", choices=["LOW", "MEDIUM", "HIGH", "CRITICAL"], default="HIGH", help="Exit with error if findings at or above this severity")
+    proxy_parser.add_argument("--mode", choices=["enforce", "monitor"], default="enforce", help="Proxy mode: enforce (block findings) or monitor (audit only)")
     proxy_parser.add_argument("--audit-log", type=str, help="Path to audit log file")
     proxy_parser.add_argument("--audit-format", choices=["jsonl", "text"], default="jsonl", help="Audit log format")
     proxy_parser.add_argument("--rate-limit", type=int, default=100, help="Max requests per second")
