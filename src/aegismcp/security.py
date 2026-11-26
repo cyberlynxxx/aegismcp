@@ -242,10 +242,10 @@ def compile_safe_pattern(pattern: str, max_length: int = 10000) -> re.Pattern:
         return original_finditer(string, *args, **kwargs)
 
     # Monkey-patch for safety (in production, use regex module with timeout)
-    compiled.search = safe_search
-    compiled.match = safe_match
-    compiled.findall = safe_findall
-    compiled.finditer = safe_finditer
+    compiled.search = safe_search  # type: ignore[method-assign]
+    compiled.match = safe_match  # type: ignore[method-assign]
+    compiled.findall = safe_findall  # type: ignore[method-assign]
+    compiled.finditer = safe_finditer  # type: ignore[method-assign]
 
     return compiled
 
