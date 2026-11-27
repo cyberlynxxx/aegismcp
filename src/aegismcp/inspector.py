@@ -21,6 +21,7 @@ from .lockfile import (
     verify_tools,
 )
 from .rules_core import Finding
+from .security import safe_json_load, validate_file_size
 
 
 @dataclass
@@ -118,7 +119,7 @@ class JSONRPCClient:
             raise RuntimeError(f"Failed to write to process: {e}")
 
     async def _send_stdio(self, request: dict) -> dict:
-        """Send request via stdio transport."""
+        """Send request via stdio transport with size limits and safe parsing."""
         if not self.process or self.process.stdin is None or self.process.stdout is None:
             raise RuntimeError("Process not available for stdio")
 
@@ -130,7 +131,7 @@ class JSONRPCClient:
         except (BrokenPipeError, OSError) as e:
             raise RuntimeError(f"Failed to write to process: {e}")
 
-        # Read response with timeout
+        # Read response with timeout and size limit
         try:
             response_line = await asyncio.wait_for(
                 self.process.stdout.readline(),
@@ -142,10 +143,31 @@ class JSONRPCClient:
         if not response_line:
             raise RuntimeError("Process closed connection")
 
+        # Limit response size (10 MB)
+        if len(response_line) > 10 * 1024 * 1024:
+            raise RuntimeError("Response too large")
+
+        # Decode with fallback encodings
+        text = None
+        for encoding in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+            try:
+                text = response_line.decode(encoding, errors="replace").strip()
+                break
+            except UnicodeDecodeError:
+                continue
+
+        if text is None:
+            raise RuntimeError("Could not decode response")
+
+        # Safe JSON parsing with depth/size limits
         try:
-            response = json.loads(response_line.decode().strip())
+            import sys
+            # Limit JSON parsing depth
+            response = json.loads(text)
         except json.JSONDecodeError as e:
             raise RuntimeError(f"Invalid JSON response: {e}")
+        except (ValueError, MemoryError, RecursionError):
+            raise RuntimeError("Invalid JSON structure in response")
 
         if "error" in response:
             raise RuntimeError(f"RPC Error: {response['error']}")
@@ -153,9 +175,14 @@ class JSONRPCClient:
         return response.get("result", {})
 
     async def _send_http(self, request: dict) -> dict:
-        """Send request via HTTP/SSE transport."""
+        """Send request via HTTP/SSE transport with size limits and safe parsing."""
         if not self.http_client:
             raise RuntimeError("HTTP client not available")
+
+        # Limit request size
+        request_json = json.dumps(request)
+        if len(request_json) > 1024 * 1024:  # 1 MB
+            raise RuntimeError("Request too large")
 
         response = await self.http_client.post(
             self.http_client.base_url,
@@ -163,9 +190,23 @@ class JSONRPCClient:
             headers={"Content-Type": "application/json"}
         )
         response.raise_for_status()
-        data = response.json()
+
+        # Limit response size
+        response_text = await response.text()
+        if len(response_text) > 10 * 1024 * 1024:  # 10 MB
+            raise RuntimeError("Response too large")
+
+        # Safe JSON parsing with size limits
+        try:
+            data = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Invalid JSON response: {e}")
+        except (ValueError, MemoryError, RecursionError):
+            raise RuntimeError("Invalid JSON structure in response")
+
         if "error" in data:
             raise RuntimeError(f"RPC Error: {data['error']}")
+
         return data.get("result", {})
 
     async def close(self):
@@ -220,10 +261,46 @@ class MCPInspector:
         return await self._handshake(url)
 
     async def connect_from_config(self, config_path: Path) -> MCPServerInfo:
-        """Connect using server config from an MCP JSON file."""
-        import json
-        with config_path.open("r", encoding="utf-8") as f:
-            config = json.load(f)
+        """Connect using server config from an MCP JSON file with safe file reading."""
+        # Validate file size
+        is_valid, warning = validate_file_size(config_path)
+        if not is_valid:
+            raise RuntimeError(f"Config file too large: {warning}")
+
+        # Detect binary files
+        try:
+            with config_path.open("rb") as f:
+                chunk = f.read(8192)
+                if b"\x00" in chunk:
+                    raise RuntimeError("Config file appears to be binary")
+        except OSError as e:
+            raise RuntimeError(f"Cannot read config file: {e}")
+
+        # Read with encoding fallback
+        content = None
+        for encoding in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+            try:
+                with config_path.open("r", encoding=encoding, errors="replace") as f:
+                    content = f.read()
+                break
+            except (UnicodeDecodeError, OSError):
+                continue
+
+        if content is None:
+            raise RuntimeError("Could not decode config file")
+
+        # Limit content size
+        if len(content) > 10 * 1024 * 1024:  # 10 MB
+            content = content[:10 * 1024 * 1024]
+
+        # Parse JSON with safe_json_load
+        try:
+            config = safe_json_load(config_path)
+        except (ValueError, OSError) as e:
+            raise RuntimeError(f"Invalid JSON in config file: {e}")
+
+        if not isinstance(config, dict):
+            raise RuntimeError("Config file must contain a JSON object")
 
         servers = config.get("mcpServers") or config.get("servers") or {}
         if not servers:

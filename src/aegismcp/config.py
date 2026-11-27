@@ -61,8 +61,38 @@ class Config:
         if yaml is None:
             raise RuntimeError("PyYAML required for config file. Install with: pip install pyyaml")
 
-        with config_file.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
+        # Check file size (DoS protection)
+        try:
+            file_size = config_file.stat().st_size
+            if file_size > 2 * 1024 * 1024:  # 2 MB limit
+                return cls()
+        except OSError:
+            return cls()
+
+        # Detect binary files
+        try:
+            with config_file.open("rb") as f:
+                chunk = f.read(8192)
+                if b"\x00" in chunk:
+                    return cls()
+        except OSError:
+            return cls()
+
+        # Read with encoding fallback
+        data = None
+        for encoding in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+            try:
+                with config_file.open("r", encoding=encoding, errors="replace") as f:
+                    content = f.read()
+                if len(content) > 10 * 1024 * 1024:  # 10 MB limit
+                    content = content[:10 * 1024 * 1024]
+                data = yaml.safe_load(content) or {}
+                break
+            except (yaml.YAMLError, UnicodeDecodeError, OSError, MemoryError):
+                continue
+
+        if data is None:
+            return cls()
 
         return cls.from_dict(data)
 

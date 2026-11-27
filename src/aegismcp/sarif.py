@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from .rules_core import Finding
+from .security import validate_file_size
 
 SEVERITY_MAP = {
     "CRITICAL": "error",
@@ -41,4 +42,31 @@ def export_sarif(findings: list[Finding], output_path: Path) -> None:
             }
         ],
     }
-    output_path.write_text(json.dumps(sarif_doc, indent=2), encoding="utf-8")
+
+    # Serialize with size limit
+    max_size = 10 * 1024 * 1024  # 10 MB
+    try:
+        sarif_json = json.dumps(sarif_doc, indent=2, ensure_ascii=False)
+    except (ValueError, MemoryError, RecursionError) as e:
+        raise RuntimeError(f"Failed to serialize SARIF: {e}")
+
+    if len(sarif_json) > max_size:
+        # Truncate results if too large
+        sarif_doc["runs"][0]["results"] = sarif_doc["runs"][0]["results"][:1000]
+        sarif_json = json.dumps(sarif_doc, indent=2, ensure_ascii=False)
+        if len(sarif_json) > max_size:
+            sarif_json = sarif_json[:max_size] + "\n\"  // truncated\""
+
+    # Write with safe file operations
+    try:
+        # Ensure parent directory exists
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write atomically using a temporary file
+        temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+        temp_path.write_text(sarif_json, encoding="utf-8")
+        temp_path.replace(output_path)
+    except OSError as e:
+        raise RuntimeError(f"Failed to write SARIF file: {e}")
+    except UnicodeEncodeError as e:
+        raise RuntimeError(f"Encoding error writing SARIF file: {e}")

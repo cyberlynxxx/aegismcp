@@ -31,6 +31,7 @@ from .proxy import ProxyConfig, run_proxy
 from .reporter import ReportOptions, print_report
 from .sarif import export_sarif
 from .scanner import scan_file
+from .security import validate_file_size
 
 
 def get_package_version() -> str:
@@ -135,33 +136,46 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
     # Export HTML if requested
     if args.html:
-        html_opts = HTMLReportOptions(
-            title="AegisMCP Scan Report",
-            theme="dark"
-        )
-        metadata = {
-            "FilesScanned": files_scanned,
-            "FindingsCount": len(all_findings),
-        }
-        save_html_report(all_findings, Path(args.html), files_scanned, html_opts, metadata)
-        print(f"HTML report saved to {args.html}")
+        html_path = Path(args.html)
+        valid, msg = validate_file_size(html_path, max_size=10 * 1024 * 1024)
+        if not valid:
+            # File doesn't exist yet, that's OK - we're creating it
+            pass
+        try:
+            html_opts = HTMLReportOptions(
+                title="AegisMCP Scan Report",
+                theme="dark"
+            )
+            metadata = {
+                "FilesScanned": files_scanned,
+                "FindingsCount": len(all_findings),
+            }
+            save_html_report(all_findings, html_path, files_scanned, html_opts, metadata)
+            print(f"HTML report saved to {args.html}")
+        except OSError as e:
+            print(f"Error writing HTML report: {e}")
+        except Exception as e:  # noqa: BLE001
+            print(f"Error generating HTML report: {e}")
 
     # SARIF export for scan command
     if args.sarif:
-        from .rules_core import Finding
-        # Convert findings to Finding format for SARIF export
-        sarif_findings = []
-        for item in all_findings:
-            sarif_findings.append(Finding(
-                rule_id=getattr(item, "rule_id", "AMCP000"),
-                severity=getattr(item, "severity", "MEDIUM"),
-                title=getattr(item, "title", "Security Issue"),
-                message=getattr(item, "message", str(item)),
-                location=getattr(item, "location", str(item)),
-                remediation=getattr(item, "remediation", ""),
-            ))
-        export_sarif(sarif_findings, Path(args.sarif))
-        print(f"SARIF report saved to {args.sarif}")
+        try:
+            from .rules_core import Finding
+            # Convert findings to Finding format for SARIF export
+            sarif_findings = []
+            for item in all_findings:
+                sarif_findings.append(Finding(
+                    rule_id=getattr(item, "rule_id", "AMCP000"),
+                    severity=getattr(item, "severity", "MEDIUM"),
+                    title=getattr(item, "title", "Security Issue"),
+                    message=getattr(item, "message", str(item)),
+                    location=getattr(item, "location", str(item)),
+                    remediation=getattr(item, "remediation", ""),
+                ))
+            export_sarif(sarif_findings, Path(args.sarif))
+            print(f"SARIF report saved to {args.sarif}")
+        except Exception as e:
+            print(f"Error generating SARIF report: {e}")
 
     return exit_code
 
@@ -325,33 +339,40 @@ def cmd_ast_scan(args: argparse.Namespace) -> int:
 
     # Export HTML if requested
     if args.html:
-        html_opts = HTMLReportOptions(
-            title="AegisMCP AST Scan Report",
-            theme="dark"
-        )
-        metadata = {
-            "FilesScanned": file_count,
-            "FindingsCount": len(findings),
-        }
-        save_html_report(findings, Path(args.html), file_count, html_opts, metadata)
-        print(f"HTML report saved to {args.html}")
+        try:
+            html_path = Path(args.html)
+            html_opts = HTMLReportOptions(
+                title="AegisMCP AST Scan Report",
+                theme="dark"
+            )
+            metadata = {
+                "FilesScanned": file_count,
+                "FindingsCount": len(findings),
+            }
+            save_html_report(findings, html_path, file_count, html_opts, metadata)
+            print(f"HTML report saved to {args.html}")
+        except Exception as e:
+            print(f"Error generating HTML report: {e}")
 
     if args.sarif:
-        # Convert ASTFinding to regular Finding for SARIF export
-        from .rules_core import Finding
-        sarif_findings = [
-            Finding(
-                rule_id=f.rule_id,
-                severity=f.severity,
-                title=f.title,
-                message=f.message,
-                location=f"{f.file_path}:{f.line}:{f.column}",
-                remediation=f.remediation,
-            )
-            for f in findings
-        ]
-        export_sarif(sarif_findings, Path(args.sarif))
-        print(f"SARIF report saved to {args.sarif}")
+        try:
+            # Convert ASTFinding to regular Finding for SARIF export
+            from .rules_core import Finding
+            sarif_findings = [
+                Finding(
+                    rule_id=f.rule_id,
+                    severity=f.severity,
+                    title=f.title,
+                    message=f.message,
+                    location=f"{f.file_path}:{f.line}:{f.column}",
+                    remediation=f.remediation,
+                )
+                for f in findings
+            ]
+            export_sarif(sarif_findings, Path(args.sarif))
+            print(f"SARIF report saved to {args.sarif}")
+        except Exception as e:
+            print(f"Error generating SARIF report: {e}")
 
     return exit_code
 
@@ -400,24 +421,31 @@ def cmd_inspect(args: argparse.Namespace) -> int:
 
     # Export SARIF if requested
     if args.sarif:
-        export_sarif(findings, Path(args.sarif))
-        print(f"SARIF report saved to {args.sarif}")
+        try:
+            export_sarif(findings, Path(args.sarif))
+            print(f"SARIF report saved to {args.sarif}")
+        except Exception as e:
+            print(f"Error generating SARIF report: {e}")
 
     # Export HTML if requested
     if args.html:
-        html_opts = HTMLReportOptions(
-            title=f"AegisMCP Inspect Report - {server_info.name}",
-            theme="dark"
-        )
-        metadata = {
-            "Server": server_info.name,
-            "Protocol": server_info.protocol_version,
-            "Tools": len(server_info.tools),
-            "Resources": len(server_info.resources),
-            "Prompts": len(server_info.prompts),
-        }
-        save_html_report(findings, Path(args.html), 1, html_opts, metadata)
-        print(f"HTML report saved to {args.html}")
+        try:
+            html_path = Path(args.html)
+            html_opts = HTMLReportOptions(
+                title=f"AegisMCP Inspect Report - {server_info.name}",
+                theme="dark"
+            )
+            metadata = {
+                "Server": server_info.name,
+                "Protocol": server_info.protocol_version,
+                "Tools": len(server_info.tools),
+                "Resources": len(server_info.resources),
+                "Prompts": len(server_info.prompts),
+            }
+            save_html_report(findings, html_path, 1, html_opts, metadata)
+            print(f"HTML report saved to {args.html}")
+        except Exception as e:
+            print(f"Error generating HTML report: {e}")
 
     return exit_code
 

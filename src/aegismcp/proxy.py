@@ -20,6 +20,11 @@ try:
 except ImportError:
     aiohttp = None  # type: ignore[assignment]
 
+try:
+    import yaml
+except ImportError:
+    yaml = None  # type: ignore[assignment]
+
 from .inspector import InspectorOptions, MCPInspector
 from .normalizer import Normalizer, is_suspicious_ip
 from .rules_core import (
@@ -29,6 +34,7 @@ from .rules_core import (
     Finding,
 )
 from .scoring import PromptInjectionScorer, ScoringMode, create_scorer_from_config
+from .security import safe_json_load, validate_file_size, safe_yaml_load
 
 
 @dataclass
@@ -142,6 +148,62 @@ class RateLimiter:
 class MCPProxy:
     """Runtime MCP Security Proxy with real-time threat detection."""
 
+    MAX_POLICY_SIZE = 2 * 1024 * 1024  # 2 MB
+    MAX_AUDIT_WRITE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+    @staticmethod
+    def load_policy_config(policy_path: Path) -> dict[str, Any]:
+        """Safely load a proxy policy YAML/JSON file with size limits and encoding fallbacks."""
+        # Validate file size
+        is_valid, warning = validate_file_size(policy_path, max_size=MCPProxy.MAX_POLICY_SIZE)
+        if not is_valid:
+            return {}
+
+        # Detect binary files
+        try:
+            with policy_path.open("rb") as f:
+                chunk = f.read(8192)
+                if b"\x00" in chunk:
+                    return {}  # Skip binary files
+        except OSError:
+            return {}
+
+        # Read with encoding fallback
+        content = None
+        for encoding in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+            try:
+                with policy_path.open("r", encoding=encoding, errors="replace") as f:
+                    content = f.read()
+                break
+            except (UnicodeDecodeError, OSError):
+                continue
+
+        if content is None:
+            return {}
+
+        # Limit content size
+        if len(content) > MCPProxy.MAX_POLICY_SIZE:
+            content = content[:MCPProxy.MAX_POLICY_SIZE]
+
+        # Try YAML first, then JSON
+        if yaml is not None:
+            try:
+                data = yaml.safe_load(content)
+                if isinstance(data, dict):
+                    return data
+            except yaml.YAMLError:
+                pass
+
+        # Fallback to JSON
+        try:
+            data = safe_json_load(policy_path)
+            if isinstance(data, dict):
+                return data
+        except (ValueError, OSError):
+            pass
+
+        return {}
+
     def __init__(self, config: ProxyConfig):
         self.config = config
         self.rate_limiter = RateLimiter(config.max_requests_per_second)
@@ -239,11 +301,27 @@ class MCPProxy:
         except (OSError, asyncio.TimeoutError):
             return web.Response(status=400, text="Invalid request body")
 
-        # Parse JSON-RPC
+        # Parse JSON-RPC with encoding fallback and size limits
         try:
-            rpc_request = json.loads(body.decode())
+            # Try UTF-8 first, then fallback encodings
+            for encoding in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+                try:
+                    text = body.decode(encoding, errors="replace")
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                text = body.decode("utf-8", errors="replace")
+
+            # Limit total JSON size
+            if len(text) > 10 * 1024 * 1024:  # 10 MB
+                return web.Response(status=413, text="Request JSON too large")
+
+            rpc_request = json.loads(text)
         except json.JSONDecodeError:
             return web.Response(status=400, text="Invalid JSON")
+        except (ValueError, MemoryError, RecursionError):
+            return web.Response(status=400, text="Invalid JSON structure")
 
         request_id = rpc_request.get("id", str(uuid.uuid4()))
         method = rpc_request.get("method", "unknown")
@@ -753,21 +831,34 @@ class MCPProxy:
         }
 
     async def _audit_request(self, entry: AuditEntry):
-        """Write audit log entry."""
+        """Write audit log entry with size limits and error handling."""
         if not self.config.audit_log:
             return
 
         try:
+            # Check audit log size before writing
+            if self.config.audit_log.exists():
+                is_valid, _ = validate_file_size(self.config.audit_log, max_size=self.MAX_AUDIT_WRITE_SIZE)
+                if not is_valid:
+                    self.logger.warning(f"Audit log too large, skipping write: {self.config.audit_log}")
+                    return
+
             if self.config.audit_format == "jsonl":
                 line = entry.to_json()
             else:
                 line = entry.to_text()
 
-            # Append to file
+            # Limit line size
+            if len(line) > 1024 * 1024:  # 1 MB per line max
+                line = line[:1024 * 1024] + "... [truncated]"
+
+            # Append to file with size validation
             with self.config.audit_log.open("a", encoding="utf-8") as f:
                 f.write(line + "\n")
         except OSError as e:
             self.logger.error(f"Audit log write failed: {e}")
+        except (UnicodeEncodeError, ValueError) as e:
+            self.logger.error(f"Audit log encoding error: {e}")
 
     async def _health_check(self, request):
         """Health check endpoint."""
@@ -815,6 +906,7 @@ def main():
     parser.add_argument("--no-block-high", action="store_true", help="Don't block HIGH findings")
     parser.add_argument("--block-medium", action="store_true", help="Block MEDIUM findings")
     parser.add_argument("--block-low", action="store_true", help="Block LOW findings")
+    parser.add_argument("--policy", type=str, help="Path to proxy policy YAML/JSON file")
 
     args = parser.parse_args()
 
@@ -831,6 +923,13 @@ def main():
         command = None
         url = args.url
 
+    # Load custom patterns from policy file if provided
+    custom_patterns = []
+    if args.policy:
+        policy_path = Path(args.policy)
+        policy_data = MCPProxy.load_policy_config(policy_path)
+        custom_patterns = policy_data.get("custom_prompt_injection_patterns", [])
+
     config = ProxyConfig(
         command=command,
         url=url,
@@ -846,6 +945,7 @@ def main():
         block_high=not args.no_block_high,
         block_medium=args.block_medium,
         block_low=args.block_low,
+        custom_prompt_injection_patterns=custom_patterns,
     )
 
     try:

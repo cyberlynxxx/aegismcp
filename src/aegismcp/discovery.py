@@ -118,15 +118,39 @@ def _looks_like_mcp_config(path: Path) -> bool:
     # Skip lockfiles
     if path.name.endswith(".lock.json") or "lock" in path.name.lower():
         return False
+
+    # Validate file size
     try:
-        import json
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        # Check for MCP-specific keys
-        if isinstance(data, dict):
-            return any(key in data for key in ("mcpServers", "servers", "tools", "resources", "prompts"))
-    except (OSError, json.JSONDecodeError):
-        pass
+        file_size = path.stat().st_size
+        if file_size > 2 * 1024 * 1024:  # 2 MB limit
+            return False
+    except OSError:
+        return False
+
+    # Detect binary files
+    try:
+        with path.open("rb") as f:
+            chunk = f.read(8192)
+            if b"\x00" in chunk:
+                return False
+    except OSError:
+        return False
+
+    # Read with encoding fallback
+    for encoding in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+        try:
+            with path.open("r", encoding=encoding, errors="replace") as f:
+                content = f.read()
+            if len(content) > 10 * 1024 * 1024:  # 10 MB limit
+                content = content[:10 * 1024 * 1024]
+            import json
+            data = json.loads(content)
+            # Check for MCP-specific keys
+            if isinstance(data, dict):
+                return any(key in data for key in ("mcpServers", "servers", "tools", "resources", "prompts"))
+            return False
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError, MemoryError):
+            continue
     return False
 
 

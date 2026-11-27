@@ -421,19 +421,51 @@ class PythonASTVisitor(ast.NodeVisitor):
 
 def scan_python_file(file_path: Path) -> list[ASTFinding]:
     """Scan a single Python file for security issues."""
+    # Check file size first (DoS protection)
     try:
-        with file_path.open("r", encoding="utf-8") as f:
-            source = f.read()
+        file_size = file_path.stat().st_size
+        if file_size > 2 * 1024 * 1024:  # 2 MB limit
+            return []
     except OSError:
         return []
 
+    # Detect binary files (null bytes)
+    try:
+        with file_path.open("rb") as f:
+            chunk = f.read(8192)
+            if b"\x00" in chunk:
+                return []  # Skip binary files
+    except OSError:
+        return []
+
+    # Read with encoding fallback
+    source = None
+    for encoding in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+        try:
+            with file_path.open("r", encoding=encoding, errors="replace") as f:
+                source = f.read()
+            break
+        except (UnicodeDecodeError, OSError):
+            continue
+
+    if source is None:
+        return []
+
+    # Limit source size to prevent memory issues
+    if len(source) > 10 * 1024 * 1024:  # 10 MB limit
+        source = source[:10 * 1024 * 1024]
+
     try:
         tree = ast.parse(source, filename=str(file_path))
-    except SyntaxError:
+    except (SyntaxError, ValueError, MemoryError, RecursionError):
         return []
 
     visitor = PythonASTVisitor(file_path)
-    visitor.visit(tree)
+    try:
+        visitor.visit(tree)
+    except (RecursionError, MemoryError):
+        return []
+
     return visitor.findings
 
 

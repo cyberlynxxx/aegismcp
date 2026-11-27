@@ -24,6 +24,8 @@ class Normalizer:
 
     # Maximum iterations for iterative decoding to prevent infinite loops
     MAX_DECODE_ITERATIONS = 5
+    MAX_INPUT_SIZE = 10 * 1024 * 1024  # 10 MB
+    MAX_RECURSION_DEPTH = 100
 
     # Regex patterns for detecting encoded content
     BASE64_PATTERN = re.compile(r'^[A-Za-z0-9+/]+={0,2}$')
@@ -43,6 +45,12 @@ class Normalizer:
         """
         if max_iterations is None:
             max_iterations = cls.MAX_DECODE_ITERATIONS
+
+        # Input size validation
+        if text is None:
+            return ""
+        if len(text) > cls.MAX_INPUT_SIZE:
+            text = text[:cls.MAX_INPUT_SIZE]
 
         # Stage 1: Unicode NFKC normalization
         text = cls._normalize_unicode(text)
@@ -154,54 +162,66 @@ class Normalizer:
         return cls.HEX_PATTERN.match(text) is not None
 
     @classmethod
-    def normalize_dict(cls, data: dict, max_iterations: int | None = None) -> dict[str, Any]:
-        """Recursively normalize all string values in a dict."""
+    def normalize_dict(cls, data: dict, max_iterations: int | None = None, depth: int = 0) -> dict[str, Any]:
+        """Recursively normalize all string values in a dict with depth limiting."""
         if max_iterations is None:
             max_iterations = cls.MAX_DECODE_ITERATIONS
+
+        # Recursion depth protection
+        if depth > cls.MAX_RECURSION_DEPTH:
+            return {}
 
         result: dict[str, Any] = {}
         for key, value in data.items():
             if isinstance(value, str):
                 result[key] = cls.normalize(value, max_iterations)
             elif isinstance(value, dict):
-                result[key] = cls.normalize_dict(value, max_iterations)
+                result[key] = cls.normalize_dict(value, max_iterations, depth + 1)
             elif isinstance(value, list):
-                result[key] = cls.normalize_list(value, max_iterations)
+                result[key] = cls.normalize_list(value, max_iterations, depth + 1)
             else:
                 result[key] = value
         return result
 
     @classmethod
-    def normalize_list(cls, data: list, max_iterations: int | None = None) -> list[Any]:
-        """Recursively normalize all string values in a list."""
+    def normalize_list(cls, data: list, max_iterations: int | None = None, depth: int = 0) -> list[Any]:
+        """Recursively normalize all string values in a list with depth limiting."""
         if max_iterations is None:
             max_iterations = cls.MAX_DECODE_ITERATIONS
+
+        # Recursion depth protection
+        if depth > cls.MAX_RECURSION_DEPTH:
+            return []
 
         result: list[Any] = []
         for item in data:
             if isinstance(item, str):
                 result.append(cls.normalize(item, max_iterations))
             elif isinstance(item, dict):
-                result.append(cls.normalize_dict(item, max_iterations))
+                result.append(cls.normalize_dict(item, max_iterations, depth + 1))
             elif isinstance(item, list):
-                result.append(cls.normalize_list(item, max_iterations))
+                result.append(cls.normalize_list(item, max_iterations, depth + 1))
             else:
                 result.append(item)
         return result
 
     @classmethod
-    def extract_all_strings(cls, data: Any) -> list[str]:
-        """Extract all string values from nested data structure."""
+    def extract_all_strings(cls, data: Any, depth: int = 0) -> list[str]:
+        """Extract all string values from nested data structure with depth limiting."""
         strings = []
+
+        # Recursion depth protection
+        if depth > cls.MAX_RECURSION_DEPTH:
+            return strings
 
         if isinstance(data, str):
             strings.append(data)
         elif isinstance(data, dict):
             for value in data.values():
-                strings.extend(cls.extract_all_strings(value))
+                strings.extend(cls.extract_all_strings(value, depth + 1))
         elif isinstance(data, list):
             for item in data:
-                strings.extend(cls.extract_all_strings(item))
+                strings.extend(cls.extract_all_strings(item, depth + 1))
 
         return strings
 

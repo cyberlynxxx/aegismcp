@@ -8,6 +8,7 @@ from typing import Any
 from .config import Config
 from .rules.registry import registry
 from .rules_core import Finding
+from .security import safe_json_load, validate_file_size
 
 
 def scan_file(file_path: Path, config: Config | None = None) -> list[Finding]:
@@ -24,14 +25,28 @@ def scan_file(file_path: Path, config: Config | None = None) -> list[Finding]:
     if config is None:
         config = Config()
 
+    # Validate file size
+    is_valid, warning = validate_file_size(file_path)
+    if not is_valid:
+        return [
+            Finding(
+                rule_id="AMCP000",
+                severity="LOW",
+                title="File Too Large",
+                message=warning,
+                location=str(file_path),
+                remediation="Split large config files or increase MAX_FILE_SIZE limit.",
+            )
+        ]
+
     # Add custom rules from config to registry
     registry.add_custom_rules(config.custom_rules)
 
     findings: list[Finding] = []
 
     try:
-        data: Any = json.loads(file_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
+        data: Any = safe_json_load(file_path)
+    except (ValueError, OSError) as exc:
         return [
             Finding(
                 rule_id="AMCP000",
@@ -39,7 +54,7 @@ def scan_file(file_path: Path, config: Config | None = None) -> list[Finding]:
                 title="Unreadable Config File",
                 message=f"Could not parse JSON: {exc}",
                 location=str(file_path),
-                remediation="Ensure the file is valid UTF-8 JSON.",
+                remediation="Ensure the file is valid UTF-8 JSON within size/depth limits.",
             )
         ]
 

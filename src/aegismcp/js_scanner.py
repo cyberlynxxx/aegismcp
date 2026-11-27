@@ -43,11 +43,48 @@ class JSScanner:
         ))
 
     def scan(self) -> list[JSFinding]:
+        # Check file size first (DoS protection)
         try:
-            with self.file_path.open("r", encoding="utf-8") as f:
-                lines = f.readlines()
+            file_size = self.file_path.stat().st_size
+            if file_size > 2 * 1024 * 1024:  # 2 MB limit
+                return []
         except OSError:
             return []
+
+        # Detect binary files (null bytes)
+        try:
+            with self.file_path.open("rb") as f:
+                chunk = f.read(8192)
+                if b"\x00" in chunk:
+                    return []  # Skip binary files
+        except OSError:
+            return []
+
+        # Read with encoding fallback
+        lines = None
+        for encoding in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+            try:
+                with self.file_path.open("r", encoding=encoding, errors="replace") as f:
+                    lines = f.readlines()
+                break
+            except (UnicodeDecodeError, OSError):
+                continue
+
+        if lines is None:
+            return []
+
+        # Limit total content size
+        total_size = sum(len(line) for line in lines)
+        if total_size > 10 * 1024 * 1024:  # 10 MB limit
+            # Truncate lines
+            truncated = []
+            running = 0
+            for line in lines:
+                running += len(line)
+                if running > 10 * 1024 * 1024:
+                    break
+                truncated.append(line)
+            lines = truncated
 
         # Simple patterns for common JS/TS security issues
         patterns = [

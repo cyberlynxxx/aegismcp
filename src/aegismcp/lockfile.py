@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .security import validate_file_size
+
 LOCKFILE_NAME = "aegismcp.lock.json"
 
 
@@ -57,8 +59,16 @@ class Lockfile:
         if not path.exists():
             return cls()
 
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+        # Validate file size
+        is_valid, warning = validate_file_size(path)
+        if not is_valid:
+            return cls()
+
+        try:
+            from .security import safe_json_load
+            data = safe_json_load(path)
+        except (ValueError, OSError):
+            return cls()
 
         # Deserialize
         servers = {}
@@ -141,10 +151,12 @@ def compute_server_config_hash(server_config: dict[str, Any]) -> str:
 
 def create_lock_from_config(config_path: Path) -> Lockfile:
     """Create a lockfile from an MCP configuration file."""
-    import json
+    from .security import safe_json_load
 
-    with config_path.open("r", encoding="utf-8") as f:
-        config = json.load(f)
+    try:
+        config = safe_json_load(config_path)
+    except (ValueError, OSError):
+        return Lockfile()
 
     lockfile = Lockfile()
 
@@ -179,12 +191,14 @@ def verify_lockfile(lockfile: Lockfile, config_path: Path) -> list[dict[str, Any
     Verify current config against lockfile.
     Returns list of violations found.
     """
-    import json
+    from .security import safe_json_load
 
     violations = []
 
-    with config_path.open("r", encoding="utf-8") as f:
-        current_config = json.load(f)
+    try:
+        current_config = safe_json_load(config_path)
+    except (ValueError, OSError):
+        return violations
 
     current_servers = current_config.get("mcpServers") or current_config.get("servers") or {}
 

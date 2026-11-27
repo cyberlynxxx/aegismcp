@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .reporter import calculate_security_score
+from .security import validate_file_size
 
 
 @dataclass
@@ -1002,9 +1003,27 @@ def save_html_report(
     options: HTMLReportOptions | None = None,
     metadata: dict[str, Any] | None = None
 ) -> None:
-    """Generate and save HTML report to file."""
+    """Generate and save HTML report to file with size limits and error handling."""
     html_content = generate_html_report(findings, file_count, options, metadata)
-    output_path.write_text(html_content, encoding="utf-8")
+
+    # Validate output path size limit (10 MB)
+    max_size = 10 * 1024 * 1024
+    if len(html_content) > max_size:
+        html_content = html_content[:max_size] + "\n<!-- Report truncated due to size limit -->"
+
+    # Write with safe file operations
+    try:
+        # Ensure parent directory exists
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write atomically using a temporary file
+        temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+        temp_path.write_text(html_content, encoding="utf-8")
+        temp_path.replace(output_path)
+    except OSError as e:
+        raise RuntimeError(f"Failed to write HTML report: {e}")
+    except UnicodeEncodeError as e:
+        raise RuntimeError(f"Encoding error writing HTML report: {e}")
 
 
 # Severity ranking for sorting

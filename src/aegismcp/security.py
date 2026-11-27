@@ -129,6 +129,25 @@ def safe_json_loads(data: str, max_depth: int = MAX_JSON_DEPTH, max_size: int = 
         raise ValueError(f"Invalid JSON: {e}")
 
 
+def safe_yaml_load(data: str, max_depth: int = MAX_JSON_DEPTH, max_size: int = MAX_JSON_SIZE) -> Any:
+    """
+    Safely parse YAML with depth and size limits to prevent DoS.
+    Note: This is a stub implementation. In a real implementation, you would use PyYAML with custom loader.
+
+    Args:
+        data: YAML string to parse
+        max_depth: Maximum nesting depth allowed
+        max_size: Maximum payload size in bytes
+
+    Returns:
+        Parsed YAML object
+
+    Raises:
+        ValueError: If limits exceeded or invalid YAML
+    """
+    raise NotImplementedError("safe_yaml_load is not implemented. Use PyYAML with custom loader for production.")
+
+
 def safe_json_load(file_path: Path, max_depth: int = MAX_JSON_DEPTH, max_size: int = MAX_JSON_SIZE) -> Any:
     """
     Safely load JSON from file with size and depth limits.

@@ -262,13 +262,20 @@ class PromptInjectionScorer:
                 mode=self.mode
             )
 
+        # Input size limit
+        if len(text) > 10 * 1024 * 1024:  # 10 MB
+            text = text[:10 * 1024 * 1024]
+
         triggered = []
         total_score = 0.0
 
         for pattern in self.patterns:
-            if pattern.pattern.search(text):
-                triggered.append(pattern)
-                total_score += pattern.weight
+            try:
+                if pattern.pattern.search(text):
+                    triggered.append(pattern)
+                    total_score += pattern.weight
+            except Exception:
+                continue
 
         result = ScoringResult(
             score=total_score,
