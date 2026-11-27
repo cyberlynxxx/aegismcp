@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from .reporter import calculate_security_score
-from .security import validate_file_size
 
 
 @dataclass

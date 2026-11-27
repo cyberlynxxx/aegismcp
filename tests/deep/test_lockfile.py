@@ -1,13 +1,14 @@
 """Deep tests for Lockfile module."""
-import pytest
 import tempfile
 from pathlib import Path
+
 from aegismcp.lockfile import (
     Lockfile,
+    compute_server_config_hash,
     create_lock_from_config,
     verify_lockfile,
-    compute_server_config_hash,
 )
+
 
 def test_lockfile_create():
     """Test creating lockfile from config."""

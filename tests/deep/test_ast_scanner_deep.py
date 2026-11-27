@@ -1,13 +1,14 @@
 """Deep tests for AST Scanner module."""
-import pytest
 import tempfile
 from pathlib import Path
+
 from aegismcp.ast_scanner import (
-    scan_python_file,
-    scan_python_directory,
-    _is_test_file,
     _is_in_test_dir,
+    _is_test_file,
+    scan_python_directory,
+    scan_python_file,
 )
+
 
 def test_scan_python_file_nonexistent():
     """Test scanning non-existent Python file."""
@@ -91,6 +92,7 @@ p.read_text()
 def test_is_user_controlled_path():
     """Test user controlled path detection."""
     import ast
+
     from aegismcp.ast_scanner import PythonASTVisitor
 
     visitor = PythonASTVisitor(Path("test.py"))

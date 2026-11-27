@@ -64,7 +64,7 @@ runs:
     - name: Install AegisMCP
       shell: bash
       run: |
-        pip install aegismcp-security==3.2.6
+        pip install aegismcp-security==3.2.8
 
     - name: Run AegisMCP Scan
       id: scan

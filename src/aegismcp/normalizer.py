@@ -208,7 +208,7 @@ class Normalizer:
     @classmethod
     def extract_all_strings(cls, data: Any, depth: int = 0) -> list[str]:
         """Extract all string values from nested data structure with depth limiting."""
-        strings = []
+        strings: list[str] = []
 
         # Recursion depth protection
         if depth > cls.MAX_RECURSION_DEPTH:

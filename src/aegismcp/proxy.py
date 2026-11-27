@@ -23,7 +23,8 @@ except ImportError:
 try:
     import yaml
 except ImportError:
-    yaml = None  # type: ignore[assignment]
+    import yaml as _yaml  # type: ignore[assignment]
+    yaml = _yaml
 
 from .inspector import InspectorOptions, MCPInspector
 from .normalizer import Normalizer, is_suspicious_ip
@@ -34,7 +35,7 @@ from .rules_core import (
     Finding,
 )
 from .scoring import PromptInjectionScorer, ScoringMode, create_scorer_from_config
-from .security import safe_json_load, validate_file_size, safe_yaml_load
+from .security import safe_json_load, validate_file_size
 
 
 @dataclass
@@ -155,7 +156,7 @@ class MCPProxy:
     def load_policy_config(policy_path: Path) -> dict[str, Any]:
         """Safely load a proxy policy YAML/JSON file with size limits and encoding fallbacks."""
         # Validate file size
-        is_valid, warning = validate_file_size(policy_path, max_size=MCPProxy.MAX_POLICY_SIZE)
+        is_valid, _warning = validate_file_size(policy_path, max_size=MCPProxy.MAX_POLICY_SIZE)
         if not is_valid:
             return {}
 

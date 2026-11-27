@@ -1,7 +1,6 @@
-import pytest
-from pathlib import Path
-from aegismcp.sarif import export_sarif
 from aegismcp.rules_core import Finding
+from aegismcp.sarif import export_sarif
+
 
 def test_sarif_export(tmp_path):
     """Test SARIF export works correctly."""

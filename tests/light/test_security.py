@@ -1,6 +1,9 @@
-import pytest
 from pathlib import Path
+
+import pytest
+
 from aegismcp.security import safe_json_load
+
 
 def test_safe_json_load_size_limit():
     """Test that safe_json_load respects size limits."""

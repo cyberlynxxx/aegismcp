@@ -60,7 +60,7 @@ class Lockfile:
             return cls()
 
         # Validate file size
-        is_valid, warning = validate_file_size(path)
+        is_valid, _warning = validate_file_size(path)
         if not is_valid:
             return cls()
 
@@ -193,7 +193,7 @@ def verify_lockfile(lockfile: Lockfile, config_path: Path) -> list[dict[str, Any
     """
     from .security import safe_json_load
 
-    violations = []
+    violations: list[dict[str, Any]] = []
 
     try:
         current_config = safe_json_load(config_path)

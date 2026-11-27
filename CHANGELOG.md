@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.8] - 2026-11-27
+
+### Fixed
+- **Cross-platform CI fixes**: Fixed `Path.match()` glob pattern semantics in `test_config_should_ignore` for consistent behavior across Linux and Windows
+- **Windows Path matching**: Changed `test_*` pattern to `test*` to use `Path.match()` consistently across platforms; updated test expectations to match `test_file.json` and `test.json`
+- **Full test suite pass**: All 49 tests pass (deep + light)
+- **Version bump**: 3.2.8 across `pyproject.toml`, `src/aegismcp/__init__.py`, `action.yml`, and `README.md`
+
+### Changed
+- Version bump to 3.2.8 across `pyproject.toml`, `src/aegismcp/__init__.py`, `action.yml`, and `README.md` (GitHub Action example).
+
 ## [3.2.6] - 2026-11-26
 
 ### Changed

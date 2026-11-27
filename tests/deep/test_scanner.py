@@ -1,9 +1,10 @@
 """Deep tests for Scanner module."""
-import pytest
 import tempfile
 from pathlib import Path
-from aegismcp.scanner import scan_file
+
 from aegismcp.config import Config
+from aegismcp.scanner import scan_file
+
 
 def test_scan_file_nonexistent():
     """Test scanning non-existent file returns AMCP000 finding."""

@@ -310,7 +310,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run AegisMCP Scan
-        uses: cyberlynxxx/aegismcp@v3.2.6
+        uses: cyberlynxxx/aegismcp@v3.2.8
         with:
           target: .
           format: sarif

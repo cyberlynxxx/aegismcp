@@ -1,9 +1,7 @@
 """Deep tests for HTML Report module."""
-import pytest
-import tempfile
-from pathlib import Path
-from aegismcp.html_report import save_html_report, HTMLReportOptions
+from aegismcp.html_report import HTMLReportOptions, save_html_report
 from aegismcp.rules_core import Finding
+
 
 def test_html_report_basic(tmp_path):
     """Test basic HTML report generation."""

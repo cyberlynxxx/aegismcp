@@ -274,7 +274,7 @@ class PromptInjectionScorer:
                 if pattern.pattern.search(text):
                     triggered.append(pattern)
                     total_score += pattern.weight
-            except Exception:
+            except re.error:
                 continue
 
         result = ScoringResult(

@@ -1,9 +1,10 @@
 """Deep tests for Proxy module."""
-import pytest
 import tempfile
 from pathlib import Path
-from aegismcp.proxy import ProxyConfig, MCPProxy
+
+from aegismcp.proxy import MCPProxy, ProxyConfig
 from aegismcp.security import validate_file_size
+
 
 def test_proxy_config_creation():
     """Test ProxyConfig creation."""

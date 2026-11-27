@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from .rules_core import Finding
-from .security import validate_file_size
 
 SEVERITY_MAP = {
     "CRITICAL": "error",
@@ -12,7 +12,7 @@ SEVERITY_MAP = {
 }
 
 def export_sarif(findings: list[Finding], output_path: Path) -> None:
-    sarif_doc = {
+    sarif_doc: dict[str, Any] = {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
         "runs": [

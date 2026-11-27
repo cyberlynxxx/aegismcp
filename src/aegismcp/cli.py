@@ -137,7 +137,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
     # Export HTML if requested
     if args.html:
         html_path = Path(args.html)
-        valid, msg = validate_file_size(html_path, max_size=10 * 1024 * 1024)
+        valid, _msg = validate_file_size(html_path, max_size=10 * 1024 * 1024)
         if not valid:
             # File doesn't exist yet, that's OK - we're creating it
             pass
@@ -174,7 +174,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
                 ))
             export_sarif(sarif_findings, Path(args.sarif))
             print(f"SARIF report saved to {args.sarif}")
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             print(f"Error generating SARIF report: {e}")
 
     return exit_code
@@ -351,7 +351,7 @@ def cmd_ast_scan(args: argparse.Namespace) -> int:
             }
             save_html_report(findings, html_path, file_count, html_opts, metadata)
             print(f"HTML report saved to {args.html}")
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             print(f"Error generating HTML report: {e}")
 
     if args.sarif:
@@ -371,7 +371,7 @@ def cmd_ast_scan(args: argparse.Namespace) -> int:
             ]
             export_sarif(sarif_findings, Path(args.sarif))
             print(f"SARIF report saved to {args.sarif}")
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             print(f"Error generating SARIF report: {e}")
 
     return exit_code
@@ -424,7 +424,7 @@ def cmd_inspect(args: argparse.Namespace) -> int:
         try:
             export_sarif(findings, Path(args.sarif))
             print(f"SARIF report saved to {args.sarif}")
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             print(f"Error generating SARIF report: {e}")
 
     # Export HTML if requested
@@ -444,7 +444,7 @@ def cmd_inspect(args: argparse.Namespace) -> int:
             }
             save_html_report(findings, html_path, 1, html_opts, metadata)
             print(f"HTML report saved to {args.html}")
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             print(f"Error generating HTML report: {e}")
 
     return exit_code

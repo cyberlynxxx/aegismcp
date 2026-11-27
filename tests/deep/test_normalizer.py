@@ -1,5 +1,5 @@
-import pytest
 from aegismcp.normalizer import Normalizer
+
 
 def test_normalizer_recursion_depth():
     """Test recursion depth protection."""

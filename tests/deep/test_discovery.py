@@ -1,12 +1,13 @@
 """Deep tests for Discovery module."""
-import pytest
 import tempfile
 from pathlib import Path
+
 from aegismcp.discovery import (
+    _looks_like_mcp_config,
     discover_mcp_files,
     iter_json_files,
-    _looks_like_mcp_config,
 )
+
 
 def test_iter_json_files():
     """Test iterating JSON files."""

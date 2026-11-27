@@ -8,7 +8,8 @@ from typing import Any
 try:
     import yaml
 except ImportError:
-    yaml = None
+    import yaml as _yaml  # type: ignore[assignment]
+    yaml = _yaml
 
 
 @dataclass

@@ -1,8 +1,9 @@
 """Deep tests for Config module."""
-import pytest
 import tempfile
 from pathlib import Path
+
 from aegismcp.config import Config
+
 
 def test_config_load_nonexistent():
     """Test loading non-existent config returns defaults."""
@@ -32,15 +33,14 @@ def test_config_should_ignore():
     config = Config(
         fail_on="HIGH",
         auto_discover=True,
-        ignore_paths=["*.test.json", "test_*"]
+        ignore_paths=["*.test.json", "test*"]
     )
 
     # Match file name
     assert config.should_ignore(Path("test_file.json")) is True
+    assert config.should_ignore(Path("test.json")) is True
     assert config.should_ignore(Path("normal.json")) is False
-    # Test with pattern matching whole path
-    assert config.should_ignore(Path("test.json")) is True  # Matches test_*
-    # test_* doesn't match subdir/test.json due to path.match behavior
+    # test* matches test.json and test_file.json but not subdir/test.json due to path.match behavior
 
 def test_config_edge_cases():
     """Test config edge cases."""

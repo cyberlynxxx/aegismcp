@@ -1,6 +1,5 @@
-import pytest
-import re
 from aegismcp.scoring import PromptInjectionScorer, ScoringMode
+
 
 def test_scorer_input_size_limit():
     """Test injection scorer respects size limit."""

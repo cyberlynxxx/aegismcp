@@ -161,7 +161,6 @@ class JSONRPCClient:
 
         # Safe JSON parsing with depth/size limits
         try:
-            import sys
             # Limit JSON parsing depth
             response = json.loads(text)
         except json.JSONDecodeError as e:
@@ -300,7 +299,7 @@ class MCPInspector:
             raise RuntimeError(f"Invalid JSON in config file: {e}")
 
         if not isinstance(config, dict):
-            raise RuntimeError("Config file must contain a JSON object")
+            raise TypeError("Config file must contain a JSON object")
 
         servers = config.get("mcpServers") or config.get("servers") or {}
         if not servers:
