@@ -56,7 +56,7 @@ from .ui import (
     render_finding_compact,
 )
 
-__version__ = "4.0.0"
+__version__ = "4.0.1"
 __all__ = [
     "ASCII_GLYPHS",
     "HIGH_RISK_SINK_TOOLS",
