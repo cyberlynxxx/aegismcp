@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Hardened MCP server for E2E testing.
 
 This server has proper security controls:

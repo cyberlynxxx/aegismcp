@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Vulnerable MCP server for E2E testing.
 
 This server intentionally has security vulnerabilities for testing:

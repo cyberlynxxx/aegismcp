@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Unit tests for Taint Firewall Phase 3 and Phase 4 enhancements."""
 
 import base64

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """E2E tests for Taint Firewall with vulnerable/hardened MCP servers.
 
 Phase 6: End-to-End verification of taint tracking and firewall protection.
