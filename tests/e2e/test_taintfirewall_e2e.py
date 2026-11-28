@@ -89,10 +89,16 @@ class TestHardenedServerProtection(unittest.TestCase):
 
     def test_command_whitelist_enforced(self):
         """Verify that only whitelisted commands can run."""
-        # Whitelisted command should work
-        result = self.server.handle_tool_call("run_safe_command", {
-            "cmd": "echo hello"
-        })
+        import sys
+        # Whitelisted command should work (echo is shell builtin on Windows, use platform-appropriate)
+        if sys.platform == "win32":
+            result = self.server.handle_tool_call("run_safe_command", {
+                "cmd": "cmd /c echo hello"
+            })
+        else:
+            result = self.server.handle_tool_call("run_safe_command", {
+                "cmd": "echo hello"
+            })
         self.assertNotIn("error", result)
 
         # Non-whitelisted command should be blocked

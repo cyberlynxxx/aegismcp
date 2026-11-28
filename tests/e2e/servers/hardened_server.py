@@ -121,7 +121,33 @@ class HardenedMCPServer:
                 return {"error": "Invalid command"}
 
             # Extract base command
-            base_cmd = cmd.split()[0] if cmd.split() else ""
+            parts = cmd.split()
+            if not parts:
+                return {"error": "Empty command"}
+
+            base_cmd = parts[0]
+
+            # Handle Windows cmd /c wrapper - the actual command is the third part
+            if base_cmd == "cmd" and len(parts) >= 3 and parts[1] == "/c":
+                actual_cmd = parts[2]
+                if actual_cmd not in self._whitelisted_commands:
+                    return {
+                        "error": f"Command not whitelisted. Allowed: {self._whitelisted_commands}"
+                    }
+                # Execute with cmd /c
+                result = subprocess.run(
+                    cmd,
+                    shell=False,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                return {
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "returncode": result.returncode
+                }
 
             if base_cmd not in self._whitelisted_commands:
                 return {
@@ -130,7 +156,7 @@ class HardenedMCPServer:
 
             # Security: No shell=True with user input
             result = subprocess.run(
-                cmd.split(),
+                parts,
                 shell=False,
                 check=False,
                 capture_output=True,
