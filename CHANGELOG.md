@@ -5,16 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-11-28
+
+### Added
+- **Phase 4 - Shield Module (`src/aegismcp/shield.py`)**: New `aegismcp shield wrap`/`unwrap` commands for creating hardened wrapper scripts around MCP servers with runtime taint monitoring and lock file verification.
+- **Phase 5 - Pentest Module (`src/aegismcp/pentest/`)**: Canary probe framework with comprehensive security probes for prompt injection, tool injection, secret leakage, path traversal, command injection, SSRF, and rug pull attacks. Includes `aegismcp pentest` CLI command.
+- **Phase 6 - E2E Test Infrastructure (`tests/e2e/`)**: End-to-end tests with vulnerable and hardened MCP servers for verifying taint tracking and firewall protection.
+
+### Security - TaintFirewall Enhancements
+- **Secret Fingerprint Storage**: `TaintFirewall.store_secret_fingerprint()` now stores captured secret fingerprints with hash, classification, and format.
+- **Outbound Argument Checking**: `TaintFirewall.check_outbound_arguments()` now scans `tools/call` arguments for secret exfiltration risk on high-risk sink tools.
+- **2-Step Exfiltration Blocking**: Detects and blocks Raw/Base64/URL-Base64/Hex/URL-encoded data flow from secrets in responses to dangerous sinks (bash, shell, http_request, curl, download, write_file, etc.).
+- **HIGH_RISK_SINK_TOOLS Blocking**: Automatically blocks `HIGH_RISK_SINK_TOOLS` (bash, shell, write_file, http_request, curl, download, ssh_connect, database_query, etc.) when session is TAINTED or QUARANTINED.
+
+### Core Features
+- **Session-based Taint State Machine**: CLEAN → TAINTED (with strike threshold) → QUARANTINED
+- **Multi-format Secret Detection**: Raw, Base64, Base64URL, Hex, and URL-encoded
+- **Thread-safe LRU Session Cache**: `TaintFirewall` uses `RLock` for thread-safe session management
+- **EventBus Integration**: Full integration with 7 typed JSON-serializable event dataclasses
+
 ## [3.2.8] - 2026-11-27
-
-### Fixed
-- **Cross-platform CI fixes**: Fixed `Path.match()` glob pattern semantics in `test_config_should_ignore` for consistent behavior across Linux and Windows
-- **Windows Path matching**: Changed `test_*` pattern to `test*` to use `Path.match()` consistently across platforms; updated test expectations to match `test_file.json` and `test.json`
-- **Full test suite pass**: All 49 tests pass (deep + light)
-- **Version bump**: 3.2.8 across `pyproject.toml`, `src/aegismcp/__init__.py`, `action.yml`, and `README.md`
-
-### Changed
-- Version bump to 3.2.8 across `pyproject.toml`, `src/aegismcp/__init__.py`, `action.yml`, and `README.md` (GitHub Action example).
 
 ## [3.2.6] - 2026-11-26
 

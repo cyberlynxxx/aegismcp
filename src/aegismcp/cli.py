@@ -15,6 +15,7 @@ except ImportError:
 from .ast_scanner import scan_python_directory, scan_python_file
 from .config import Config
 from .discovery import discover_mcp_files
+from .events import JsonlEventSink, get_event_bus
 from .html_report import HTMLReportOptions, save_html_report
 from .inspector import (
     InspectorOptions,
@@ -27,11 +28,15 @@ from .lockfile import (
     create_lock_from_config,
     verify_lockfile,
 )
+from .pentest.canary import run_pentest
 from .proxy import ProxyConfig, run_proxy
 from .reporter import ReportOptions, print_report
 from .sarif import export_sarif
 from .scanner import scan_file
 from .security import validate_file_size
+
+from .shield import cmd_shield, cmd_unshield  # isort: skip
+from .taint_monitor import initialize_taint_monitoring  # isort: skip
 
 
 def get_package_version() -> str:
@@ -466,6 +471,23 @@ def cmd_proxy(args: argparse.Namespace) -> int:
         command = None
         url = args.url
 
+    # Setup EventBus sinks
+    bus = get_event_bus()
+    if args.events_log:
+        sink = JsonlEventSink(args.events_log)
+        bus.add_sink(sink)
+
+    # Load policy file if provided
+    custom_patterns = []
+    if hasattr(args, 'policy') and args.policy:
+        from .proxy import MCPProxy
+        policy_path = Path(args.policy)
+        policy_data = MCPProxy.load_policy_config(policy_path)
+        custom_patterns = policy_data.get("custom_prompt_injection_patterns", [])
+
+    # Initialize taint monitoring
+    initialize_taint_monitoring()
+
     config = ProxyConfig(
         command=command,
         url=url,
@@ -479,13 +501,16 @@ def cmd_proxy(args: argparse.Namespace) -> int:
         max_requests_per_second=args.rate_limit,
         max_request_size=args.max_size,
         block_critical=not args.no_block_critical,
-        block_high=not args.no_block_high,
+        block_high= not args.no_block_high,
         block_medium=args.block_medium,
         block_low=args.block_low,
+        custom_prompt_injection_patterns=custom_patterns,
+        events_log_path=Path(args.events_log) if args.events_log else None,
+        lockfile_path=Path(args.lockfile) if hasattr(args, 'lockfile') and args.lockfile else None,
     )
 
     try:
-        asyncio.run(run_proxy(config))
+        asyncio.run(run_proxy(config, live=args.live))
     except KeyboardInterrupt:
         pass
     except Exception as e:  # noqa: BLE001
@@ -574,6 +599,36 @@ def main() -> None:
     proxy_parser.add_argument("--no-block-high", action="store_true", help="Don't block HIGH findings")
     proxy_parser.add_argument("--block-medium", action="store_true", help="Block MEDIUM findings")
     proxy_parser.add_argument("--block-low", action="store_true", help="Block LOW findings")
+    proxy_parser.add_argument("--events-log", type=str, help="Path to JSONL events log")
+    proxy_parser.add_argument("--policy", type=str, help="Path to proxy policy YAML/JSON file")
+    proxy_parser.add_argument("--lockfile", type=str, help="Path to lockfile for tool verification (default: ./aegismcp.lock.json)")
+    proxy_parser.add_argument("--live", action="store_true", help="Enable live SOC monitor (Rich-based UI)")
+
+    # --- pentest command ---
+    pentest_parser = subparsers.add_parser("pentest", help="Run security probe tests against MCP server (pentest mode)")
+    pentest_parser.add_argument("--server", type=str, default="test_server", help="Server name to test")
+    pentest_parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output with probe details")
+    pentest_parser.add_argument("-o", "--output", type=str, help="Output path for JSON report")
+
+    # --- shield command ---
+    shield_parser = subparsers.add_parser("shield", help="Shield/unshield MCP servers with whitelist-based security")
+    shield_subparsers = shield_parser.add_subparsers(dest="shield_action", required=True)
+
+    shield_wrap = shield_subparsers.add_parser("wrap", help="Create a shielded wrapper for MCP server")
+    shield_wrap.add_argument("config", type=str, help="Path to MCP config JSON file")
+    shield_wrap.add_argument("-o", "--output", type=str, help="Output path for shield script")
+    shield_wrap.add_argument("-l", "--lockfile", type=str, help="Path to lockfile (optional)")
+    shield_wrap.add_argument("--env", nargs="*", help="Environment variables in KEY=VALUE format")
+    shield_wrap.add_argument("--log", type=str, help="Log file path")
+
+    shield_unwrap = shield_subparsers.add_parser("unwrap", help="Remove shield wrapper and restore config")
+    shield_unwrap.add_argument("-o", "--output", type=str, help="Output path for unshield script")
+    shield_unwrap.add_argument("--restore-path", type=str, required=True, help="Path to backup to restore")
+
+    # --- unshield command (alias for shield unwrap) ---
+    unshield_parser = subparsers.add_parser("unshield", help="Remove shield wrapper and restore config (alias for 'shield unwrap')")
+    unshield_parser.add_argument("-o", "--output", type=str, help="Output path for unshield script")
+    unshield_parser.add_argument("--restore-path", type=str, required=True, help="Path to backup to restore")
 
     # Add shared options to scan parser
     scan_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output with full details")
@@ -599,6 +654,15 @@ def main() -> None:
         sys.exit(cmd_inspect(args))
     elif args.command == "proxy":
         sys.exit(cmd_proxy(args))
+    elif args.command == "pentest":
+        sys.exit(run_pentest(vars(args)))
+    elif args.command == "shield":
+        if args.shield_action == "wrap":
+            sys.exit(cmd_shield(args))
+        elif args.shield_action == "unwrap":
+            sys.exit(cmd_unshield(args))
+    elif args.command == "unshield":
+        sys.exit(cmd_unshield(args))
     elif args.command is None:
         parser.print_help()
         sys.exit(2)

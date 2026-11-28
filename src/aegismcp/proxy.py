@@ -26,7 +26,9 @@ except ImportError:
     import yaml as _yaml  # type: ignore[assignment]
     yaml = _yaml
 
+from .events import ProxyInterceptEvent, get_event_bus
 from .inspector import InspectorOptions, MCPInspector
+from .lockfile import compute_tool_hash
 from .normalizer import Normalizer, is_suspicious_ip
 from .rules_core import (
     RESPONSE_INJECTION_PATTERNS,
@@ -36,6 +38,7 @@ from .rules_core import (
 )
 from .scoring import PromptInjectionScorer, ScoringMode, create_scorer_from_config
 from .security import safe_json_load, validate_file_size
+from .taint_monitor import get_firewall, initialize_taint_monitoring
 
 
 @dataclass
@@ -80,6 +83,12 @@ class ProxyConfig:
 
     # Custom patterns (loaded from policy file)
     custom_prompt_injection_patterns: list[dict] = field(default_factory=list)
+
+    # Events log for JSONL event sink
+    events_log_path: Path | None = None
+
+    # Lockfile path for tool verification
+    lockfile_path: Path | None = None
 
 
 @dataclass
@@ -214,6 +223,10 @@ class MCPProxy:
         self.blocked_count = 0
         self.logger = logging.getLogger("aegismcp.proxy")
 
+        # Initialize taint monitoring
+        initialize_taint_monitoring()
+        self.firewall = get_firewall()
+
         # Initialize prompt injection scorer
         mode = ScoringMode.STRICT if config.prompt_injection_mode == "strict" else ScoringMode.BALANCED
         self.scorer = PromptInjectionScorer(mode=mode)
@@ -226,8 +239,18 @@ class MCPProxy:
         # Initialize normalizer
         self.normalizer = Normalizer()
 
-    async def start(self):
+    async def start(self, live: bool = False, monitor=None):
         """Start the proxy - connect to upstream server and begin listening."""
+        from .events import JsonlEventSink
+
+        # Setup events log sink if configured
+        if self.config.events_log_path:
+            bus = get_event_bus()
+            sink = JsonlEventSink(str(self.config.events_log_path))
+            sink.__enter__()  # Open file
+            bus.add_sink(sink)
+            self._event_sink = sink
+
         # Connect to upstream MCP server
         await self._connect_upstream()
 
@@ -245,8 +268,12 @@ class MCPProxy:
 
         print(f"[OK] MCP Proxy started on http://{self.config.bind_host}:{self.config.bind_port}")
         print(f"     Upstream: {'stdio' if self.config.command else self.config.url}")
-        print(f"     Security: fail_on={self.config.fail_on}")
+        print(f"     Security: fail_on={self.config.fail_on}, mode={self.config.mode}")
         print(f"     Audit log: {self.config.audit_log or 'disabled'}")
+        if self.config.events_log_path:
+            print(f"     Events log: {self.config.events_log_path}")
+        if live and monitor:
+            print("     Live monitor: enabled")
 
         # Keep running
         try:
@@ -258,9 +285,13 @@ class MCPProxy:
             await runner.cleanup()
             if self.inspector:
                 await self.inspector.close()
+            if hasattr(self, '_event_sink') and self._event_sink:
+                self._event_sink.__exit__(None, None, None)
 
     async def _connect_upstream(self):
         """Connect to the upstream MCP server."""
+        from .lockfile import Lockfile
+
         options = InspectorOptions(
             timeout=self.config.timeout,
             command=self.config.command,
@@ -285,6 +316,12 @@ class MCPProxy:
 
         self.inspector = inspector
         self.server_info = inspector.server_info
+
+        # Load lockfile if configured for tool verification
+        self.lockfile: Lockfile | None = None
+        if self.config.lockfile_path and self.config.lockfile_path.exists():
+            self.lockfile = Lockfile.load(self.config.lockfile_path)
+            print(f"     Lockfile: {self.config.lockfile_path}")
 
     async def _handle_request(self, request):
         """Handle incoming MCP JSON-RPC request."""
@@ -324,9 +361,27 @@ class MCPProxy:
         except (ValueError, MemoryError, RecursionError):
             return web.Response(status=400, text="Invalid JSON structure")
 
+        session_id = request.headers.get("X-MCP-Session-ID", str(uuid.uuid4()))
         request_id = rpc_request.get("id", str(uuid.uuid4()))
         method = rpc_request.get("method", "unknown")
         client_ip = request.remote or "unknown"
+
+        # Check if session is quarantined
+        if self.firewall.is_quarantined(session_id):
+            self.blocked_count += 1
+            return web.Response(
+                status=403,
+                content_type="application/json",
+                text=json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {
+                        "code": -32001,
+                        "message": "Session quarantined due to security violations",
+                        "data": {"session_id": session_id}
+                    }
+                })
+            )
 
         # Validate JSON-RPC structure
         if rpc_request.get("jsonrpc") != "2.0":
@@ -346,6 +401,20 @@ class MCPProxy:
             findings=findings,
         ))
 
+        # Publish ProxyInterceptEvent
+        get_event_bus().publish(ProxyInterceptEvent(
+            direction="request",
+            client_id=client_ip,
+            client_ip=client_ip,
+            server_name=self.server_info.name if self.server_info else "unknown",
+            method=method,
+            session_id=session_id,
+            blocked=not allowed,
+            rule_id=findings[0].rule_id if findings else "",
+            reason=findings[0].message if findings else "",
+            payload_preview=json.dumps(rpc_request)[:1000]
+        ))
+
         if not allowed:
             self.blocked_count += 1
             blocked_response = self._create_blocked_response(request_id, findings)
@@ -362,6 +431,20 @@ class MCPProxy:
 
             # Scan response for AMCP309 threats
             resp_findings = self._scan_response(method, response)
+
+            # Publish ProxyInterceptEvent for response
+            get_event_bus().publish(ProxyInterceptEvent(
+                direction="response",
+                client_id=client_ip,
+                client_ip=client_ip,
+                server_name=self.server_info.name if self.server_info else "unknown",
+                method=method,
+                session_id=session_id,
+                blocked=self._should_block(resp_findings),
+                rule_id=resp_findings[0].rule_id if resp_findings else "",
+                reason=resp_findings[0].message if resp_findings else "",
+                payload_preview=json.dumps(response)[:1000]
+            ))
 
             if resp_findings:
                 await self._audit_request(AuditEntry(
@@ -731,18 +814,46 @@ class MCPProxy:
                         remediation="Verify this tool is expected; update lockfile if legitimate"
                     ))
 
-            # Check for modified tools
-            for name, tool in current_tools.items():
-                if name in known_tools:
-                    known = known_tools[name]
-                    if tool.get("description") != known.description or tool.get("inputSchema") != known.input_schema:
+                # Lockfile enforcement: check if tool hash matches
+                if self.lockfile:
+                    server_lock = self.lockfile.servers.get(self.server_info.name)
+                    if server_lock:
+                        lockfile_tools = {t.name: t for t in server_lock.tools}
+                        if name in lockfile_tools:
+                            current_tool = tool.get("function", tool.get("tool", {}))
+                            if isinstance(current_tool, dict):
+                                current_hash = compute_tool_hash(
+                                    name,
+                                    current_tool.get("description", ""),
+                                    current_tool.get("parameters", {})
+                                )
+                                if current_hash != lockfile_tools[name].hash:
+                                    findings.append(Finding(
+                                        rule_id="AMCP308",
+                                        severity="CRITICAL",
+                                        title="Tool Definition Changed at Runtime",
+                                        message=f"Tool '{name}' hash differs from lockfile - possible tool poisoning",
+                                        location=f"tools.{name}",
+                                        remediation="Investigate immediately; hash mismatch with lockfile"
+                                    ))
+
+            # Check for tool removal/modification against lockfile
+            if self.lockfile:
+                server_lock = self.lockfile.servers.get(self.server_info.name)
+                if server_lock:
+                    lockfile_tool_names = {t.name for t in server_lock.tools}
+                    runtime_tool_names = set(current_tools.keys())
+
+                    # Check for removed tools
+                    removed = lockfile_tool_names - runtime_tool_names
+                    for name in removed:
                         findings.append(Finding(
-                            rule_id="AMCP308",
-                            severity="CRITICAL",
-                            title="Tool Definition Changed at Runtime",
-                            message=f"Tool '{name}' definition differs from lockfile/initial scan",
+                            rule_id="AMCP307",
+                            severity="HIGH",
+                            title="Tool Removed at Runtime",
+                            message=f"Tool '{name}' was in lockfile but not in runtime response - possible rug-pull",
                             location=f"tools.{name}",
-                            remediation="Investigate immediately - possible tool poisoning/rug-pull"
+                            remediation="Verify tool was intentionally removed; check for supply chain attack"
                         ))
 
         # AMCP309: Response inspection for tools/call results, resources/read, prompts/get
@@ -883,10 +994,24 @@ class MCPProxy:
         })
 
 
-async def run_proxy(config: ProxyConfig):
-    """Run the MCP proxy."""
+async def run_proxy(config: ProxyConfig, live: bool = False):
+    """Run the MCP proxy with optional live SOC monitor."""
     proxy = MCPProxy(config)
-    await proxy.start()
+
+    # Start live monitor if requested
+    monitor = None
+    if live:
+        from .ui.live_monitor import LiveMonitor, MonitorConfig
+        monitor = LiveMonitor(MonitorConfig(refresh_rate=4.0, max_events=50))
+        monitor.start()
+        print("[OK] Live SOC monitor started on stderr")
+
+    try:
+        await proxy.start(live=live, monitor=monitor)
+    finally:
+        if monitor:
+            monitor.stop()
+            print("\n[OK] Live SOC monitor stopped")
 
 
 def main():
@@ -907,7 +1032,10 @@ def main():
     parser.add_argument("--no-block-high", action="store_true", help="Don't block HIGH findings")
     parser.add_argument("--block-medium", action="store_true", help="Block MEDIUM findings")
     parser.add_argument("--block-low", action="store_true", help="Block LOW findings")
+    parser.add_argument("--mode", choices=["enforce", "monitor"], default="enforce", help="Proxy mode: enforce (block findings) or monitor (audit only)")
+    parser.add_argument("--events-log", type=str, help="Path to JSONL events log")
     parser.add_argument("--policy", type=str, help="Path to proxy policy YAML/JSON file")
+    parser.add_argument("--live", action="store_true", help="Enable live SOC monitor (Rich-based UI)")
 
     args = parser.parse_args()
 
@@ -938,19 +1066,21 @@ def main():
         bind_port=port,
         timeout=args.timeout,
         fail_on=args.fail_on,
+        mode=args.mode,
         audit_log=Path(args.audit_log) if args.audit_log else None,
         audit_format=args.audit_format,
         max_requests_per_second=args.rate_limit,
         max_request_size=args.max_size,
         block_critical=not args.no_block_critical,
-        block_high=not args.no_block_high,
+        block_high= not args.no_block_high,
         block_medium=args.block_medium,
         block_low=args.block_low,
         custom_prompt_injection_patterns=custom_patterns,
+        events_log_path=Path(args.events_log) if args.events_log else None,
     )
 
     try:
-        asyncio.run(run_proxy(config))
+        asyncio.run(run_proxy(config, live=args.live))
     except KeyboardInterrupt:
         pass
 
